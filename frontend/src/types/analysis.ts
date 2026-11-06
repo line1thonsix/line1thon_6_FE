@@ -6,6 +6,6 @@ type AnalysisBase = { jobId: string; attempt: number; maxAttempts: 3; startedAt:
 export type AnalysisSnapshot = AnalysisBase & (
   { status: 'PENDING' } | { status: 'FAILED'; reason: AnalysisFailure } | { status: 'DONE'; resultId: string }
 )
-// F-11 integration boundary; actual answer/findings are not fetched or rendered yet.
+// F-11 result identity. Answer/findings are fetched separately after DONE.
 export type AnalysisCompletion = { chatId: string; jobId: string; resultId: string }
 export type MockAnalysisRetryRequest = { jobId: string; clientRequestId: string }

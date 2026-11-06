@@ -10,10 +10,14 @@ import { readPendingThought } from '../api/pendingThought.ts'
 import type { PendingThought } from '../types/thought.ts'
 import { createAnalysisStore, MockAnalysisError } from './analysisStore.ts'
 import type { AnalysisScenario } from './analysisStore.ts'
+import { buildComparisonFixture } from './comparisonFixtures.ts'
+import type { ComparisonScenario } from './comparisonFixtures.ts'
+import { readComparisonResult } from '../api/comparisonResult.ts'
+import type { ComparisonResult } from '../types/comparison.ts'
 import { getPreparation } from './chatFixtures.ts'
 
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number }
+type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
@@ -22,7 +26,20 @@ export function createChatHandlers(options: Options = {}) {
   const requests = new Map<string, Entry>()
   const chats = new Map<string, LockedChat>()
   const thoughts = new Map<string, PendingThought>()
-  const analyses = createAnalysisStore({ now: options.now, scenario: options.analysisScenario, durationMs: options.analysisDurationMs })
+  const results = new Map<string, ComparisonResult>()
+  const analyses = createAnalysisStore({ now: options.now, scenario: options.analysisScenario, durationMs: options.analysisDurationMs,
+    validateResult: (chatId, jobId, resultId) => {
+      const chat = chats.get(chatId)
+      const saved = thoughts.get(chatId)
+      if (!chat || !saved) return false
+      try {
+        const raw = buildComparisonFixture(chat, saved.thought, jobId, resultId, options.comparisonScenario?.() ?? 'standard')
+        const verified = readComparisonResult(raw, saved.thought)
+        results.set(resultId, verified)
+        return true
+      } catch { return false }
+    },
+  })
   const thoughtAttempts = new Map<string, number>()
   return [
     http.post(path, async ({ request }) => {
@@ -120,6 +137,17 @@ export function createChatHandlers(options: Options = {}) {
         return HttpResponse.json({ code: error instanceof MockAnalysisError ? error.code : 'RETRY_FAILED' }, { status: 409 })
       }
     }),
+    http.get(`${path}/:chatId/result`, ({ params, request }) => {
+      const chatId = String(params.chatId)
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      // Never trust query parameters/client UI state to open the lock.
+      const analysis = analyses.get(chatId)
+      if (!analysis || analysis.status !== 'DONE') return HttpResponse.json({ code: 'LOCKED' }, { status: 403 })
+      if (new URL(request.url).searchParams.get('resultId') !== analysis.resultId) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      const result = results.get(analysis.resultId)
+      if (!result || options.comparisonScenario?.() === 'fetch-error') return HttpResponse.json({ code: 'RESULT_UNAVAILABLE' }, { status: 503 })
+      return HttpResponse.json(result)
+    }),
     http.get(`${path}/:chatId/analysis`, ({ params }) => {
       const chatId = String(params.chatId)
       if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
@@ -135,6 +163,10 @@ export function createChatHandlers(options: Options = {}) {
 }
 
 export const handlers = createChatHandlers({
+  comparisonScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('result')
+    return ['all-categories', 'sparse', 'invalid-quote', 'all-invalid', 'empty', 'fetch-error'].includes(scenario ?? '') ? scenario as ComparisonScenario : 'standard'
+  },
   analysisScenario: () => {
     const scenario = new URL(location.href).searchParams.get('analysis')
     return ['fail-once', 'fail-twice', 'always-fail', 'invalid-output', 'recover', 'timeout', 'pending'].includes(scenario ?? '') ? scenario as AnalysisScenario : 'success'

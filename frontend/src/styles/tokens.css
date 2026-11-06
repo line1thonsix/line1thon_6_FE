@@ -1,4 +1,16 @@
 @theme {
+  --color-me-surface: #faf8f1;
+  --color-hold-surface: #f3f4f2;
+  --color-common-line: #bddbee;
+  --color-common-fg: #3a769c;
+  --color-complement-line: #f2dc9a;
+  --color-complement-fg: #946b00;
+  --color-unique-line: #d6cdee;
+  --color-unique-fg: #6a5aa8;
+  --color-conflict-line: #f3c9c4;
+  --color-conflict-fg: #b0453a;
+  --color-hold-line: #d6dbd7;
+  --color-hold-fg: #66706a;
   --color-danger: #c5544c;
   --color-code-bg: #f4f7f3;
   --color-tab-bg: #fafbf9;

@@ -11,6 +11,7 @@ export function AnalysisStatus({ analysis }: { analysis: AnalysisController }) {
     {snapshot && <p className="mt-2 text-caption text-muted">분석 시도 {snapshot.attempt} / {snapshot.maxAttempts}</p>}
     {snapshot?.status === 'FAILED' && !retrying && <div role="alert">
       <p className="mt-2 text-body text-secondary">연결이 지연되고 있어요. 내 생각은 그대로 있어요.</p>
+      {snapshot.reason === 'INVALID_OUTPUT' && <p className="mt-1 text-caption text-muted">유효한 비교 항목을 확인하지 못했어요. 내 생각은 보존되어 있어요.</p>}
       {snapshot.reason === 'TIMEOUT' && <p className="mt-1 text-caption text-muted">이번 분석이 90초를 넘어 중단되었어요.</p>}
       {exhausted ? <p className="mt-2 text-body text-secondary">분석을 3회 시도했어요. 내 생각은 보존되며, AI 답변은 계속 잠겨 있어요.</p> :
         <Button className="mt-2 gap-1.5 text-body text-danger!" onClick={analysis.retry} disabled={retrying}>다시 연결해 볼게요<Icon name="retry" /></Button>}

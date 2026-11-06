@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { QuestionBubble } from './QuestionBubble'
 import { QuestionComposer } from './QuestionComposer'
+import { ComparisonResult } from './ComparisonResult'
 import { AnalysisStatus } from './AnalysisStatus'
 import { LockedAnswer } from './LockedAnswer'
 import { Button } from '../ui/Button'
@@ -12,10 +13,12 @@ import type { LockedChat } from '../../types/chat'
 export function ThoughtFlow({ chat }: { chat: LockedChat }) {
   const thought = useThoughtSubmission(chat.id)
   const analysis = useAnalysis(chat.id, thought.receipt?.analysis.jobId ?? null)
+  const completedResultId = analysis.completion?.resultId
   const conversation = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (thought.phase !== 'writing') conversation.current?.scrollTo({ top: conversation.current.scrollHeight })
-  }, [thought.phase])
+    if (completedResultId) conversation.current?.scrollTo({ top: 0 })
+    else if (thought.phase !== 'writing') conversation.current?.scrollTo({ top: conversation.current.scrollHeight })
+  }, [thought.phase, completedResultId])
   function insert(text: string) {
     thought.insert(text)
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
@@ -32,13 +35,15 @@ export function ThoughtFlow({ chat }: { chat: LockedChat }) {
 
             {thought.phase === 'failed' && <div role="alert"><p className="mt-2 text-body text-secondary">{thought.feedback}</p><Button className="mt-2 gap-1.5 text-body text-danger" onClick={thought.retry}>다시 제출해 볼게요<Icon name="retry" /></Button></div>}
           </section>}
-          {thought.phase === 'pending' && thought.receipt && <AnalysisStatus analysis={analysis} />}
+          {thought.phase === 'pending' && thought.receipt && (analysis.completion
+            ? <ComparisonResult completion={analysis.completion} thought={thought.receipt.thought} />
+            : <AnalysisStatus analysis={analysis} />)}
         </>}
       </div>
     </div>
-    <QuestionComposer draft={chat} mode="locked" validation="" onChange={() => {}} onSubmit={() => {}}
+    {!analysis.completion && <QuestionComposer draft={chat} mode="locked" validation="" onChange={() => {}} onSubmit={() => {}}
       thought={thought.draft} onThoughtChange={thought.change} thoughtPhase={thought.phase}
       thoughtActionLabel={!analysis.retrying && analysis.snapshot?.status === 'FAILED' ? '분석 실패' : analysis.completion ? '분석 완료' : '분석 대기 중'}
-      thoughtFeedback={thought.feedback} onThoughtSubmit={thought.submit} onThoughtBlur={thought.check} />
+      thoughtFeedback={thought.feedback} onThoughtSubmit={thought.submit} onThoughtBlur={thought.check} />}
   </>
 }

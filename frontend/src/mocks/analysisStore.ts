@@ -3,8 +3,8 @@ import type { AnalysisSnapshot, MockAnalysisRetryRequest } from '../types/analys
 import { readAnalysisSnapshot } from '../api/analysisSnapshot.ts'
 
 export type AnalysisScenario = 'success' | 'fail-once' | 'fail-twice' | 'always-fail' | 'invalid-output' | 'recover' | 'timeout' | 'pending'
-type Options = { now?: () => number; scenario?: () => AnalysisScenario; durationMs?: number }
-type Job = { snapshot: AnalysisSnapshot; scenario: AnalysisScenario }
+type Options = { now?: () => number; scenario?: () => AnalysisScenario; durationMs?: number; validateResult?: (chatId: string, jobId: string, resultId: string) => boolean }
+type Job = { snapshot: AnalysisSnapshot; scenario: AnalysisScenario; invalidOutput?: boolean }
 export class MockAnalysisError extends Error {
   readonly code: string
   constructor(code: string) { super(code); this.code = code }
@@ -29,12 +29,29 @@ export function createAnalysisStore(options: Options = {}) {
         (job.scenario === 'fail-twice' && snapshot.attempt <= 2)
       // Resolve by server completion time even if the browser polls late.
       const neverFinishes = ['timeout', 'pending'].includes(job.scenario)
-      const finishesAfter = duration * (fail || job.scenario === 'recover' ? 2 : 1)
+      const finishesAfter = duration * (fail || job.scenario === 'recover' || job.invalidOutput ? 2 : 1)
       // Failed AI/invalid output gets exactly one internal re-call, not a new user attempt.
       if (elapsed >= ANALYSIS_TIMEOUT_MS && (neverFinishes || finishesAfter >= ANALYSIS_TIMEOUT_MS)) job.snapshot = { ...snapshot, status: 'FAILED', reason: 'TIMEOUT' }
       else if (fail && elapsed >= duration * 2) job.snapshot = { ...snapshot, status: 'FAILED', reason: job.scenario === 'invalid-output' ? 'INVALID_OUTPUT' : 'AI_ERROR' }
       else if (!fail && !neverFinishes && elapsed >= duration * (job.scenario === 'recover' ? 2 : 1)) {
-        job.snapshot = { ...snapshot, status: 'DONE', resultId: crypto.randomUUID() }
+        // A result must contain at least one valid, source-grounded finding before DONE.
+        const validate = () => {
+          const resultId = crypto.randomUUID()
+          if (options.validateResult && !options.validateResult(chatId, snapshot.jobId, resultId)) return false
+          job.snapshot = { ...snapshot, status: 'DONE', resultId }
+          return true
+        }
+        if (!job.invalidOutput) {
+          if (!validate()) {
+            if (job.scenario === 'recover') job.snapshot = { ...snapshot, status: 'FAILED', reason: 'INVALID_OUTPUT' }
+            else job.invalidOutput = true
+          }
+        }
+        if (job.invalidOutput && duration * 2 >= ANALYSIS_TIMEOUT_MS && elapsed >= ANALYSIS_TIMEOUT_MS) {
+          job.snapshot = { ...snapshot, status: 'FAILED', reason: 'TIMEOUT' }
+        } else if (job.invalidOutput && elapsed >= duration * 2) {
+          if (!validate()) job.snapshot = { ...snapshot, status: 'FAILED', reason: 'INVALID_OUTPUT' }
+        }
       }
     }
     return readAnalysisSnapshot(job.snapshot)
