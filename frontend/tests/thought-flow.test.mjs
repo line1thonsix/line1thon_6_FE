@@ -89,7 +89,10 @@ test('MSW rejects invalid thoughts without starting analysis, duplicate submits 
     assert.equal(detail.thought, valid)
     assert.equal(detail.status, 'LOCKED')
     const analysis = await (await fetch(origin + path + '/analysis')).json()
-    assert.deepEqual(analysis, first.analysis)
+    assert.equal(analysis.jobId, first.analysis.jobId)
+    assert.equal(analysis.status, 'PENDING')
+    assert.equal(analysis.attempt, 1)
+    assert.equal(analysis.maxAttempts, 3)
     for (const value of [first, detail, analysis]) assertStillLocked(value)
     assert.equal((await post('/api/chats/missing/thoughts', { thought: valid, clientRequestId: 'missing' })).status, 404)
   } finally { server.close() }

@@ -8,10 +8,12 @@ import type { QuestionDraft, LockedChat } from '../types/chat.ts'
 import { validateThought, thoughtMetrics, THOUGHT_TOO_LONG } from '../api/thoughtValidation.ts'
 import { readPendingThought } from '../api/pendingThought.ts'
 import type { PendingThought } from '../types/thought.ts'
+import { createAnalysisStore, MockAnalysisError } from './analysisStore.ts'
+import type { AnalysisScenario } from './analysisStore.ts'
 import { getPreparation } from './chatFixtures.ts'
 
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number }
+type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
@@ -20,6 +22,7 @@ export function createChatHandlers(options: Options = {}) {
   const requests = new Map<string, Entry>()
   const chats = new Map<string, LockedChat>()
   const thoughts = new Map<string, PendingThought>()
+  const analyses = createAnalysisStore({ now: options.now, scenario: options.analysisScenario, durationMs: options.analysisDurationMs })
   const thoughtAttempts = new Map<string, number>()
   return [
     http.post(path, async ({ request }) => {
@@ -87,6 +90,8 @@ export function createChatHandlers(options: Options = {}) {
         saved = { chatId, status: 'LOCKED', thoughtId: crypto.randomUUID(), thought: normalized,
           analysis: { jobId: crypto.randomUUID(), status: 'PENDING' } }
         thoughts.set(chatId, saved)
+        const analysis = analyses.start(chatId)
+        saved.analysis = { jobId: analysis.jobId, status: 'PENDING' }
       }
       const attempt = (thoughtAttempts.get(chatId) ?? 0) + 1
       thoughtAttempts.set(chatId, attempt)
@@ -97,21 +102,43 @@ export function createChatHandlers(options: Options = {}) {
       }
       return HttpResponse.json(readPendingThought(saved), { status: 202 })
     }),
+    http.post(`${path}/:chatId/analysis/retry`, async ({ request, params }) => {
+      const chatId = String(params.chatId)
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      let body: Record<string, unknown>
+      try {
+        const value: unknown = await request.json()
+        if (!value || typeof value !== 'object') throw new Error('Invalid JSON')
+        body = value as Record<string, unknown>
+      } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
+      if (typeof body.jobId !== 'string' || !body.jobId || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) {
+        return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+      }
+      try {
+        return HttpResponse.json(analyses.retry(chatId, { jobId: body.jobId, clientRequestId: body.clientRequestId }), { status: 202 })
+      } catch (error) {
+        return HttpResponse.json({ code: error instanceof MockAnalysisError ? error.code : 'RETRY_FAILED' }, { status: 409 })
+      }
+    }),
     http.get(`${path}/:chatId/analysis`, ({ params }) => {
       const chatId = String(params.chatId)
       if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
-      const saved = thoughts.get(chatId)
-      return saved ? HttpResponse.json({ ...saved.analysis }) : HttpResponse.json({ code: 'LOCKED' }, { status: 403 })
+      const snapshot = analyses.get(chatId)
+      return snapshot ? HttpResponse.json(snapshot) : HttpResponse.json({ code: 'LOCKED' }, { status: 403 })
     }),
     http.get(`${path}/:chatId`, ({ params }) => {
       const chat = chats.get(String(params.chatId))
       const saved = thoughts.get(String(params.chatId))
-      return chat ? HttpResponse.json({ ...readLockedChat(chat), ...(saved ? { thoughtId: saved.thoughtId, thought: saved.thought, analysis: { ...saved.analysis } } : {}) }) : HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      return chat ? HttpResponse.json({ ...readLockedChat(chat), ...(saved ? { thoughtId: saved.thoughtId, thought: saved.thought, analysis: analyses.get(String(params.chatId)) } : {}) }) : HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
     }),
   ]
 }
 
 export const handlers = createChatHandlers({
+  analysisScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('analysis')
+    return ['fail-once', 'fail-twice', 'always-fail', 'invalid-output', 'recover', 'timeout', 'pending'].includes(scenario ?? '') ? scenario as AnalysisScenario : 'success'
+  },
   thoughtScenario: () => {
     const scenario = new URL(location.href).searchParams.get('thought')
     return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'

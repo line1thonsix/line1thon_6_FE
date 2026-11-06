@@ -14,9 +14,9 @@ type Props = {
   draft: QuestionDraft; onChange: (value: QuestionDraft) => void; onSubmit: () => void;
   mode: 'editing' | 'creating' | 'error' | 'locked'; validation: string;
   thought: string; onThoughtChange: (value: string) => void;
-  thoughtPhase?: ThoughtPhase; thoughtFeedback?: string; onThoughtSubmit?: () => void; onThoughtBlur?: () => void;
+  thoughtPhase?: ThoughtPhase; thoughtFeedback?: string; thoughtActionLabel?: string; onThoughtSubmit?: () => void; onThoughtBlur?: () => void;
 }
-export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, thought, onThoughtChange, thoughtPhase = 'writing', thoughtFeedback = '', onThoughtSubmit, onThoughtBlur }: Props) {
+export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, thought, onThoughtChange, thoughtPhase = 'writing', thoughtFeedback = '', thoughtActionLabel = '분석 대기 중', onThoughtSubmit, onThoughtBlur }: Props) {
   const [codeOpen, setCodeOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const editing = mode === 'editing'
@@ -25,7 +25,7 @@ export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, 
   const thoughtInvalid = validateThought(thought) !== null
   const thoughtLength = thoughtMetrics(thought).length
   const thoughtSending = locked && !thoughtInvalid && thoughtEditable
-  const thoughtLabel = thoughtPhase === 'submitting' ? '생각 제출 중' : thoughtPhase === 'pending' ? '분석 대기 중' : '내 생각 제출'
+  const thoughtLabel = thoughtPhase === 'submitting' ? '생각 제출 중' : thoughtPhase === 'pending' ? thoughtActionLabel : '내 생각 제출'
   const invalid = draft.question.length > QUESTION_MAX_LENGTH || draft.code.length > 6000
   return <div className={`relative flex shrink-0 flex-col items-center gap-3 px-6 pb-6 ${expanded && editing ? 'min-h-composer-base justify-end' : ''}`}>
     <Card className={`rounded-composer border-line-strong p-4 ${expanded && editing ? 'absolute bottom-composer-footer left-1/2 z-10 w-[calc(100%-48px)] max-w-composer-expanded -translate-x-1/2' : 'w-full max-w-content'}`}>
