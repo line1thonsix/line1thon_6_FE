@@ -1,3 +1,4 @@
+import checkChoice from '../../assets/icons/check-choice.svg'
 import check from '../../assets/icons/check.svg'
 import chevronUp from '../../assets/icons/chevron-up.svg'
 import code from '../../assets/icons/code.svg'
@@ -19,7 +20,7 @@ import plus from '../../assets/icons/plus.svg'
 import chevron from '../../assets/icons/chevron.svg'
 import send from '../../assets/icons/send.svg'
 
-const icons = { more, newChat, history, info, sidebar, plus, chevron, send, check, chevronUp, code, expand, sendActive, collapse, codeChevron, lock, plusDisabled, chevronDisabled, retry, plusExample }
+const icons = { checkChoice, more, newChat, history, info, sidebar, plus, chevron, send, check, chevronUp, code, expand, sendActive, collapse, codeChevron, lock, plusDisabled, chevronDisabled, retry, plusExample }
 export type IconName = keyof typeof icons
 export function Icon({ name }: { name: IconName }) {
   return <img src={icons[name]} alt="" aria-hidden="true" className="block shrink-0" />

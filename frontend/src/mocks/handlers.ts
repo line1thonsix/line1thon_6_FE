@@ -5,10 +5,13 @@ import { validateQuestion } from '../api/chatValidation.ts'
 import { readLockedChat } from '../api/lockedChat.ts'
 import { questionTypes } from '../types/chat.ts'
 import type { QuestionDraft, LockedChat } from '../types/chat.ts'
+import { validateThought, thoughtMetrics, THOUGHT_TOO_LONG } from '../api/thoughtValidation.ts'
+import { readPendingThought } from '../api/pendingThought.ts'
+import type { PendingThought } from '../types/thought.ts'
 import { getPreparation } from './chatFixtures.ts'
 
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string }
+type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
@@ -16,6 +19,8 @@ export function createChatHandlers(options: Options = {}) {
   const path = options.origin ? new URL(MOCK_CHATS_PATH, options.origin).href : MOCK_CHATS_PATH
   const requests = new Map<string, Entry>()
   const chats = new Map<string, LockedChat>()
+  const thoughts = new Map<string, PendingThought>()
+  const thoughtAttempts = new Map<string, number>()
   return [
     http.post(path, async ({ request }) => {
       let body: Record<string, unknown>
@@ -59,14 +64,58 @@ export function createChatHandlers(options: Options = {}) {
         ? HttpResponse.json(readLockedChat(result.chat), { status: 201 })
         : HttpResponse.json({ code: 'MOCK_PREPARATION_FAILED' }, { status: 503 })
     }),
+    http.post(`${path}/:chatId/thoughts`, async ({ request, params }) => {
+      const chatId = String(params.chatId)
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      let body: Record<string, unknown>
+      try {
+        const value: unknown = await request.json()
+        if (!value || typeof value !== 'object') throw new Error('Invalid JSON')
+        body = value as Record<string, unknown>
+      } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
+      if (typeof body.thought !== 'string' || typeof body.clientRequestId !== 'string' ||
+        !body.clientRequestId || body.clientRequestId.length > 100) {
+        return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+      }
+      const error = validateThought(body.thought)
+      if (error) return HttpResponse.json({ code: error === THOUGHT_TOO_LONG ? 'THOUGHT_TOO_LONG' : 'THOUGHT_INVALID', message: error }, { status: 400 })
+      const normalized = thoughtMetrics(body.thought).normalized
+      let saved = thoughts.get(chatId)
+      if (saved && saved.thought !== normalized) return HttpResponse.json({ code: 'THOUGHT_IMMUTABLE' }, { status: 409 })
+      if (!saved) {
+        // Save the original before any async work/failure; one job per chat.
+        saved = { chatId, status: 'LOCKED', thoughtId: crypto.randomUUID(), thought: normalized,
+          analysis: { jobId: crypto.randomUUID(), status: 'PENDING' } }
+        thoughts.set(chatId, saved)
+      }
+      const attempt = (thoughtAttempts.get(chatId) ?? 0) + 1
+      thoughtAttempts.set(chatId, attempt)
+      const scenario = options.thoughtScenario?.() ?? 'success'
+      await delay(options.thoughtDelayMs ?? options.delayMs ?? (scenario === 'slow' ? 5000 : 900))
+      if (scenario === 'error' || (scenario === 'error-once' && attempt === 1)) {
+        return HttpResponse.json({ code: 'MOCK_THOUGHT_SUBMISSION_FAILED' }, { status: 503 })
+      }
+      return HttpResponse.json(readPendingThought(saved), { status: 202 })
+    }),
+    http.get(`${path}/:chatId/analysis`, ({ params }) => {
+      const chatId = String(params.chatId)
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      const saved = thoughts.get(chatId)
+      return saved ? HttpResponse.json({ ...saved.analysis }) : HttpResponse.json({ code: 'LOCKED' }, { status: 403 })
+    }),
     http.get(`${path}/:chatId`, ({ params }) => {
       const chat = chats.get(String(params.chatId))
-      return chat ? HttpResponse.json(readLockedChat(chat)) : HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      const saved = thoughts.get(String(params.chatId))
+      return chat ? HttpResponse.json({ ...readLockedChat(chat), ...(saved ? { thoughtId: saved.thoughtId, thought: saved.thought, analysis: { ...saved.analysis } } : {}) }) : HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
     }),
   ]
 }
 
 export const handlers = createChatHandlers({
+  thoughtScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('thought')
+    return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'
+  },
   scenario: () => {
     const scenario = new URL(location.href).searchParams.get('mock')
     return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'
