@@ -1,5 +1,6 @@
 import type { HTMLAttributes } from 'react'
 
-export function Card({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={`rounded-panel border border-line bg-page ${className}`} {...props} />
+type CardProps = HTMLAttributes<HTMLDivElement> & { surface?: 'page' | 'subtle' }
+export function Card({ surface = 'page', className = '', ...props }: CardProps) {
+  return <div className={`rounded-panel border border-line ${surface === 'subtle' ? 'bg-brand-subtle' : 'bg-page'} ${className}`} {...props} />
 }

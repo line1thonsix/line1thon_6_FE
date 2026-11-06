@@ -1,62 +1,74 @@
 # Deveil frontend
 
-개발 환경과 PC 새 채팅 화면(48:831)의 첫 UI를 구성했습니다. 서비스 API는 연결하지 않았습니다.
+React + TypeScript + Vite + Tailwind CSS 기반의 PC UI입니다.
+질문 입력 → 생성 로딩·오류 → 답변 잠금까지 MSW로 동작합니다. 실제 백엔드·AI는 연결하지 않았습니다.
 
 ## 실행
 
 ```sh
 npm install
-npm run dev
+npm run dev:mock
 ```
 
-Vite가 출력하는 로컬 주소로 접속합니다. 기본 포트는 5173입니다.
+Vite가 출력하는 주소로 접속합니다. 기본 포트는 5173입니다.
+`npm run dev`는 UI만 실행하며, Mock 모드가 아니면 질문 전송을 안내 메시지로 차단합니다.
+프로덕션 빌드에서도 Mock API를 호출하거나 Worker를 시작하지 않습니다.
 
 ```sh
-npm run dev:mock  # 개발 환경에서 MSW 활성화
 npm run build     # TypeScript 검사 + 프로덕션 빌드
 npm run lint
-npm run preview   # 빌드 결과 미리보기
+npm test          # 검증 경계값·잠금 데이터·중복 생성·오류 재시도 테스트
+npm run preview
 ```
 
-MSW는 기본적으로 비활성화되어 있습니다. `dev:mock`은 `.env.mock`을 읽습니다.
-또는 `.env.example`을 `.env.local`로 복사하고 `VITE_ENABLE_MOCKS=true`로 설정합니다.
-MSW 핸들러는 비어 있으며 미등록 요청은 그대로 통과합니다. Worker 시작을 기다린 뒤 React를 렌더링합니다.
-프로덕션 실행에서는 MSW를 시작하지 않습니다.
+## Mock 시나리오
 
-## 구조
+Mock 서버에서 다음 URL 매개변수를 사용합니다. 실제 서비스 요청 계약에는 포함되지 않습니다.
 
-- `src/components`: 공통 UI, 레이아웃, 새 채팅 컴포넌트
-- `src/pages`: 새 채팅 화면과 404 화면
-- `src/api`: TanStack Query 클라이언트, 추후 API 호출 계층
-- `src/mocks`: MSW 초기화와 빈 핸들러 목록
-- `src/hooks`: 공통 훅 (준비 폴더)
-- `src/types`: 공통 타입 (준비 폴더)
-- `src/styles`: Tailwind 진입점과 기본 스타일
-- `public/mockServiceWorker.js`: MSW CLI로 생성한 Worker
+- `/`: 약 1.2초 후 질문 생성 성공, LOCKED 상태
+- `/?mock=error-once`: 첫 요청 실패, 같은 요청 재시도 시 성공
+- `/?mock=error`: 계속 실패
+- `/?mock=slow`: 약 5초 후 성공 (로딩·새 채팅 중 요청 취소 검증)
 
-React Router는 BrowserRouter를 사용합니다. 배포 시에는 정적 호스트에서 SPA 경로를 index.html로 연결하는 설정이 필요합니다.
-TanStack Query의 자동 재시도는 비활성화했습니다. 향후 조회 재시도와 서버 분석 재시도는 별도로 설계합니다.
+MSW는 개발 모드의 `VITE_ENABLE_MOCKS=true`일 때만 동적 로드합니다.
+`.env.mock`이 이를 활성화합니다. 또는 `.env.example`을 `.env.local`로 복사해 설정할 수 있습니다.
+데이터와 중복 방지 기록은 메모리에만 있으며, 새로고침 후 영구 복구는 이번 범위에 포함되지 않습니다.
 
-## 미확정 API 계약
+## 현재 범위
 
-세션 쿠키/헤더, 요청·응답 DTO, 상태 전이, 잠금 해제 시점, 중복 방지 방식, 힌트 저장,
-삭제·중지 엔드포인트는 확정하지 않았습니다. 서비스 API 호출, 인증 저장, 프록시 대상,
-Mock 응답 데이터 및 폴링은 아직 추가하지 않았습니다. `../docs`의 기존 명세는 변경하지 않았습니다.
+- 질문 유형 5개, 질문 1~2,000자·선택 코드 최대 6,000자
+- Enter 전송, Shift+Enter 줄바꿈, IME 조합 중 전송 방지
+- 예시 질문 카드는 해당 유형으로 즉시 전송 (작성 중 코드 대신 예시 자체를 전송)
+- 코드 접기·펼치기와 확대, 코드 미실행
+- 전송 후 질문·코드·유형 변경 금지, 중복 전송 즉시 차단
+- 오류 시 질문·코드 보존, 동일한 Mock 요청 ID로 재시도
+- 새 채팅 시 진행 중 요청 취소, 늦은 응답 무시
+- 잠금 화면의 선택지 3개·예시 문장을 내 생각 초안에 삽입
+- 내 생각 제출, 힌트, 잠금 해제, 분석·결과, 영구 기록은 미구현
 
-브라우저에 전달되는 VITE_ 환경 변수에는 비밀키를 넣지 마세요.
+잠금 배경은 장식용 선입니다. 기준 답변·분석 결과·미공개 힌트는 Mock fixture와 응답에 없습니다.
+응답을 UI 상태로 옮길 때도 공개 가능한 필드만 새 객체에 복사합니다.
+코드·유형 선택과 내 생각 제출 버튼은 전송 후 적절히 비활성화합니다.
 
-## 첫 UI 구성
+## 구조와 임시 계약
 
-- `src/styles/tokens.css`: 색상, 글꼴, 간격, 모서리, 사이드바·상단바·본문 폭 토큰
-- `src/components/layout`: AppShell, Sidebar, Header
 - `src/components/ui`: Button, Card, Input, Textarea, Icon
-- `src/components/chat`: Welcome, QuestionComposer
-- `src/data/newChat.ts`: 화면용 예시 질문. 서버 DTO와 분리
-- `src/assets/icons`: Figma에서 내려받은 원본 SVG 8개
+- `src/components/layout`: AppShell, Sidebar, Header
+- `src/components/chat`: 입력창, 코드 에디터, 유형 선택, 질문 말풍선, 잠금 카드
+- `src/hooks/useQuestionFlow.ts`: 입력·로딩·오류·잠금 상태와 요청 수명 관리
+- `src/styles/tokens.css`: 디자인 토큰 (PC 1440×900 기준)
+- `src/types/chat.ts`: 프론트 화면 모델
+- `src/api/mockChatContract.ts`: 개발 전용 임시 경로·요청 타입
+- `src/api/chats.ts`: Mock 전용 HTTP 어댑터
+- `src/api/lockedChat.ts`: 잠금 응답 허용 필드 투영
+- `src/mocks`: 질문 생성·잠금 상세 조회 핸들러와 답을 포함하지 않는 fixture
+- `tests/question-flow.test.mjs`: Node 내장 테스트와 MSW 통합 검증
 
-PC 1440×900을 기준으로 구현했습니다. 모바일 화면은 이번 범위에 포함하지 않습니다.
-본문 폰트는 SF Pro를 우선하며 설치되어 있지 않으면 OS 기본 글꼴을 사용합니다.
-예시 카드는 질문을 입력창에 채우며 전송하지 않습니다. 입력과 사이드바 접기·펼치기,
-새 채팅 초기화는 로컬 상태로 동작합니다. 코드 추가, 유형 선택, 기록, 데이터 관리는
-다음 단계 안내를 표시하며 실제 저장이나 API 호출은 하지 않습니다.
-게스트 저장 문구는 Figma 디자인 문구이며 이번 단계에는 영구 저장 기능이 없습니다.
+`POST /api/chats`와 `GET /api/chats/:chatId`의 응답 구조·clientRequestId는 이번 UI용 임시 Mock 계약입니다.
+실제 서버의 인증(쿠키/헤더), DTO, 중복 방지 규약, 생성 상태 조회와 오류 계약은 확정하지 않았습니다.
+실제 연동 때 HTTP 어댑터와 Mock 계약을 교체해야 합니다. 이번 Mock의 접근 제어는 실제 서버 보안 검증을 대신하지 않습니다.
+
+게스트 자동 저장 문구는 Figma 문구이며 이번 단계에는 영구 저장 기능이 없습니다.
+폰트는 SF Pro 우선, 없으면 OS 대체 글꼴을 사용하며 모바일 디자인은 이번 범위가 아닙니다.
+BrowserRouter 배포 시 정적 호스트에 SPA fallback 설정이 필요합니다.
+`VITE_` 환경 변수에는 비밀키를 넣지 마세요. `../docs`는 변경하지 않습니다.

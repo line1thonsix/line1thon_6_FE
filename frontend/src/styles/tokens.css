@@ -1,4 +1,22 @@
 @theme {
+  --color-danger: #c5544c;
+  --color-code-bg: #f4f7f3;
+  --color-tab-bg: #fafbf9;
+  --color-ai-surface: #f6f9f5;
+  --spacing-type-menu: 364px;
+  --spacing-composer-base: 192px;
+  --spacing-composer-footer: 54px;
+  --spacing-composer-expanded: 920px;
+  --spacing-code-editor: 132px;
+  --spacing-code-expanded: 264px;
+  --spacing-code-preview: 88px;
+  --spacing-question-bubble: 560px;
+  --spacing-lock-card: 122px;
+  --text-code: 13px;
+  --text-code--line-height: 22px;
+  --text-subhead: 18px;
+  --text-subhead--line-height: 26px;
+  --shadow-popover: 0 2px 18px rgb(27 36 32 / 0.14);
   --color-page: #ffffff;
   --color-sidebar: #f6f8f5;
   --color-ink: #1b2420;
