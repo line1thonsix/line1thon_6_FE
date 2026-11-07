@@ -1,3 +1,6 @@
+import { openedHints } from './hintFixtures.ts'
+import { stuckPoints } from '../types/hints.ts'
+import type { StuckPoint, HintLevel } from '../types/hints.ts'
 import { persistentMap } from './persistence.ts'
 import type { MockPersistence } from './persistence.ts'
 import { buildSavedExample, isSavedExample } from './savedExamples.ts'
@@ -30,6 +33,7 @@ export function createChatHandlers(options: Options = {}) {
   const requests = persistentMap<string, Entry>('requests', options.persistence)
   const chats = persistentMap<string, LockedChat>('chats', options.persistence)
   const thoughts = persistentMap<string, PendingThought>('thoughts', options.persistence)
+  const hints = persistentMap<string, { level: HintLevel; stuckPoint: StuckPoint | null }>('hints', options.persistence)
   const results = new Map<string, ComparisonResult>()
   const settings = persistentMap<string, { saved: boolean; comparison: ComparisonScenario }>('settings', options.persistence)
   const usesSaved = (chatId: string) => settings.get(chatId)?.saved ?? false
@@ -50,6 +54,39 @@ export function createChatHandlers(options: Options = {}) {
   })
   const thoughtAttempts = persistentMap<string, number>('thoughtAttempts', options.persistence)
   return [
+    http.get(`${path}/:chatId/hints`, ({ params }) => {
+      const chat = chats.get(String(params.chatId))
+      if (!chat) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      const saved = hints.get(chat.id) ?? { level: 0 as const, stuckPoint: null }
+      return HttpResponse.json({ chatId: chat.id, ...saved, hints: openedHints(chat, saved.level) })
+    }),
+    http.post(`${path}/:chatId/hints`, async ({ request, params }) => {
+      const chat = chats.get(String(params.chatId))
+      if (!chat) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      let body: Record<string, unknown>
+      try {
+        const value = await request.json()
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
+        body = value as Record<string, unknown>
+      } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
+      // Recheck after awaiting the body: thought submission may have raced this request.
+      if (thoughts.has(chat.id)) return HttpResponse.json({ code: 'ALREADY_SUBMITTED' }, { status: 409 })
+      const saved = hints.get(chat.id) ?? { level: 0 as HintLevel, stuckPoint: null as StuckPoint | null }
+      let next = { ...saved }
+      if (Object.keys(body).length !== 1) return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+      if ('level' in body) {
+        if (body.level !== 1 && body.level !== 2) return HttpResponse.json({ code: 'INVALID_LEVEL' }, { status: 400 })
+        if (body.level > saved.level + 1) return HttpResponse.json({ code: 'HINT_ORDER_REQUIRED' }, { status: 409 })
+        // Explicit target levels make repeated clicks/lost acknowledgements idempotent.
+        next.level = Math.max(saved.level, body.level) as HintLevel
+      } else if ('stuckPoint' in body) {
+        if (!stuckPoints.includes(body.stuckPoint as StuckPoint)) return HttpResponse.json({ code: 'INVALID_STUCK_POINT' }, { status: 400 })
+        if (saved.level < 1) return HttpResponse.json({ code: 'HINT_ORDER_REQUIRED' }, { status: 409 })
+        next.stuckPoint = body.stuckPoint as StuckPoint
+      } else return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+      hints.set(chat.id, next)
+      return HttpResponse.json({ chatId: chat.id, ...next, hints: openedHints(chat, next.level) })
+    }),
     http.post(path, async ({ request }) => {
       let body: Record<string, unknown>
       try {

@@ -1,4 +1,7 @@
 @theme {
+  --radius-hint: 33px;
+  --spacing-hint-x: 30px;
+  --spacing-hint-y: 13px;
   --color-me-surface: #faf8f1;
   --color-hold-surface: #f3f4f2;
   --color-common-line: #bddbee;
