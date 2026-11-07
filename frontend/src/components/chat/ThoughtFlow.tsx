@@ -1,3 +1,6 @@
+import { useHints } from '../../hooks/useHints'
+import type { BasicLearningTransition } from '../../types/learning'
+import { BasicLearningPending } from './BasicLearningPending'
 import { useEffect, useRef } from 'react'
 import { QuestionBubble } from './QuestionBubble'
 import { QuestionComposer } from './QuestionComposer'
@@ -11,8 +14,10 @@ import { useThoughtSubmission } from '../../hooks/useThoughtSubmission'
 import type { PendingThought } from '../../types/thought'
 import type { LockedChat } from '../../types/chat'
 
-export function ThoughtFlow({ chat, restoredReceipt }: { chat: LockedChat; restoredReceipt?: PendingThought | null }) {
+export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: LockedChat; restoredReceipt?: PendingThought | null; restoredBasic?: BasicLearningTransition }) {
   const thought = useThoughtSubmission(chat.id, restoredReceipt)
+  const hints = useHints(chat.id, thought.canStartBasic)
+  const basicLearning = restoredBasic ?? hints.state?.basicLearning
   const analysis = useAnalysis(chat.id, thought.receipt?.analysis.jobId ?? null)
   const completedResultId = analysis.completion?.resultId
   const conversation = useRef<HTMLDivElement>(null)
@@ -24,11 +29,12 @@ export function ThoughtFlow({ chat, restoredReceipt }: { chat: LockedChat; resto
     thought.insert(text)
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
   }
+  if (basicLearning) return <BasicLearningPending chat={chat} transition={basicLearning} draft={thought.draft} />
   return <>
     <div ref={conversation} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">
         <QuestionBubble draft={chat} />
-        {thought.phase === 'writing' ? <LockedAnswer chat={chat} thought={thought.draft} onInsert={insert} /> : <>
+        {thought.phase === 'writing' ? <LockedAnswer hints={hints} chat={chat} thought={thought.draft} onInsert={insert} /> : <>
           <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{thought.receipt?.thought ?? thought.draft}</p></section></div>
           {thought.phase !== 'pending' && <section aria-label="생각 제출 상태" aria-busy={thought.phase === 'submitting'}>
             <p className="text-caption text-secondary">Deveil</p>
@@ -43,8 +49,8 @@ export function ThoughtFlow({ chat, restoredReceipt }: { chat: LockedChat; resto
       </div>
     </div>
     {!analysis.completion && <QuestionComposer draft={chat} mode="locked" validation="" onChange={() => {}} onSubmit={() => {}}
-      thought={thought.draft} onThoughtChange={thought.change} thoughtPhase={thought.phase}
+      thoughtBlocked={hints.transitionBlocked} thought={thought.draft} onThoughtChange={thought.change} thoughtPhase={thought.phase}
       thoughtActionLabel={!analysis.retrying && analysis.snapshot?.status === 'FAILED' ? '분석 실패' : analysis.completion ? '분석 완료' : '분석 대기 중'}
-      thoughtFeedback={thought.feedback} onThoughtSubmit={thought.submit} onThoughtBlur={thought.check} />}
+      thoughtFeedback={thought.feedback} onThoughtSubmit={() => { if (hints.canWrite()) thought.submit() }} onThoughtBlur={thought.check} />}
   </>
 }

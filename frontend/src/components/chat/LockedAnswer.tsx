@@ -1,13 +1,12 @@
-import { useHints } from '../../hooks/useHints'
+import type { useHints } from '../../hooks/useHints'
 import { HintPanel } from './HintPanel'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import type { LockedChat } from '../../types/chat'
 
-type Props = { chat: LockedChat; thought: string; onInsert: (text: string) => void }
-export function LockedAnswer({ chat, thought, onInsert }: Props) {
-  const hints = useHints(chat.id)
+type Props = { chat: LockedChat; thought: string; onInsert: (text: string) => void; hints: ReturnType<typeof useHints> }
+export function LockedAnswer({ chat, thought, onInsert, hints }: Props) {
   const tab = hints.tab
   function returnToThought() {
     hints.select('choices')

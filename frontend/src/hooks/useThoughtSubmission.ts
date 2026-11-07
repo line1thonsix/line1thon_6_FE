@@ -60,7 +60,7 @@ export function useThoughtSubmission(chatId: string, restoredReceipt: PendingTho
     submitted.current = request
     void run(request)
   }
-  return { draft, phase, feedback, receipt, change, check, submit,
+  return { canStartBasic: () => !receipt && !submitted.current && !active.current, draft, phase, feedback, receipt, change, check, submit,
     insert: (text: string) => change(appendThought(latestDraft.current, text)),
     retry: () => { if (phase === 'failed' && submitted.current) void run(submitted.current) },
   }

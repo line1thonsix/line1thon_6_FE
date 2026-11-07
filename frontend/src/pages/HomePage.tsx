@@ -18,7 +18,7 @@ export function HomePage() {
     <main className="flex min-h-0 flex-1 flex-col">
       {cannotSave && <p role="alert" className="px-6 py-1 text-caption text-danger">브라우저 임시 저장을 사용할 수 없어 새로고침 시 복구되지 않을 수 있어요.</p>}
       {import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCKS === 'true' && <p className="px-6 py-1 text-caption text-muted">MSW Mock · 실제 AI 미연결{new URLSearchParams(location.search).get('demo') === 'true' ? ' · 저장 예시 시연 모드' : ''}</p>}
-      {flow.stage === 'restoring' || flow.stage === 'restore-error' ? <div className="m-auto p-6">{flow.stage === 'restoring' ? <p role="status">저장된 대화 상태를 확인하고 있어요…</p> : <div role="alert"><p>{flow.message}</p><Button onClick={retry}>다시 불러오기</Button></div>}</div> : flow.stage === 'locked' ? <ThoughtFlow key={flow.chat.id} chat={flow.chat} restoredReceipt={flow.receipt} /> : <>
+      {flow.stage === 'restoring' || flow.stage === 'restore-error' ? <div className="m-auto p-6">{flow.stage === 'restoring' ? <p role="status">저장된 대화 상태를 확인하고 있어요…</p> : <div role="alert"><p>{flow.message}</p><Button onClick={retry}>다시 불러오기</Button></div>}</div> : flow.stage === 'locked' ? <ThoughtFlow key={flow.chat.id} chat={flow.chat} restoredReceipt={flow.receipt} restoredBasic={flow.basicLearning} /> : <>
         {flow.stage === 'editing' ? <Welcome onSelect={question => {
           const example = exampleQuestions.find(item => item.question === question)
           submit({ question, code: '', type: example?.type ?? 'FREE' })

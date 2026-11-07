@@ -1,3 +1,4 @@
+import { readBasicLearningTransition } from './basicLearningState.ts'
 import { readLockedChat } from './lockedChat.ts'
 import { readAnalysisSnapshot } from './analysisSnapshot.ts'
 import { readPendingThought } from './pendingThought.ts'
@@ -7,6 +8,11 @@ import { MOCK_CHATS_PATH } from './mockChatContract.ts'
 export function readRestoredChat(value: unknown) {
   const chat = readLockedChat(value)
   const raw = value as Record<string, unknown>
+  if (raw.learningPath !== undefined && raw.learningPath !== 'SELF' && raw.learningPath !== 'BASIC') throw new Error('학습 경로를 확인할 수 없어요.')
+  if (raw.learningPath === 'BASIC' || raw.basicLearning != null) {
+    if (raw.learningPath !== 'BASIC' || raw.thoughtId !== undefined || raw.thought !== undefined || raw.analysis !== undefined) throw new Error('학습 경로가 서로 충돌해요.')
+    return { chat, receipt: null, basicLearning: readBasicLearningTransition(raw.basicLearning, chat.id) }
+  }
   if (raw.thoughtId === undefined && raw.thought === undefined && raw.analysis === undefined) return { chat, receipt: null }
   const analysis = readAnalysisSnapshot(raw.analysis)
   const receipt = readPendingThought({ chatId: chat.id, status: 'LOCKED', thoughtId: raw.thoughtId,

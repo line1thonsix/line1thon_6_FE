@@ -14,14 +14,14 @@ type Props = {
   draft: QuestionDraft; onChange: (value: QuestionDraft) => void; onSubmit: () => void;
   mode: 'editing' | 'creating' | 'error' | 'locked'; validation: string;
   thought: string; onThoughtChange: (value: string) => void;
-  thoughtPhase?: ThoughtPhase; thoughtFeedback?: string; thoughtActionLabel?: string; onThoughtSubmit?: () => void; onThoughtBlur?: () => void;
+  thoughtBlocked?: boolean; thoughtPhase?: ThoughtPhase; thoughtFeedback?: string; thoughtActionLabel?: string; onThoughtSubmit?: () => void; onThoughtBlur?: () => void;
 }
-export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, thought, onThoughtChange, thoughtPhase = 'writing', thoughtFeedback = '', thoughtActionLabel = '분석 대기 중', onThoughtSubmit, onThoughtBlur }: Props) {
+export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, thought, onThoughtChange, thoughtPhase = 'writing', thoughtBlocked = false, thoughtFeedback = '', thoughtActionLabel = '분석 대기 중', onThoughtSubmit, onThoughtBlur }: Props) {
   const [codeOpen, setCodeOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const editing = mode === 'editing'
   const locked = mode === 'locked'
-  const thoughtEditable = locked && thoughtPhase === 'writing'
+  const thoughtEditable = locked && thoughtPhase === 'writing' && !thoughtBlocked
   const thoughtInvalid = validateThought(thought) !== null
   const thoughtLength = thoughtMetrics(thought).length
   const thoughtSending = locked && !thoughtInvalid && thoughtEditable

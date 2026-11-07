@@ -1,3 +1,4 @@
+import type { BasicLearningTransition } from '../types/learning'
 import { useEffect, useRef, useState } from 'react'
 import { restoreMockChat } from '../api/restoreChat'
 import { readSession, writeSession, workspaceKey } from '../storage/session'
@@ -8,7 +9,7 @@ import type { MockCreateChatRequest } from '../api/mockChatContract'
 import type { QuestionDraft, LockedChat } from '../types/chat'
 
 type Flow = { stage: 'editing' } | { stage: 'creating'; request: MockCreateChatRequest } |
-  { stage: 'error'; request: MockCreateChatRequest; message: string } | { stage: 'locked'; chat: LockedChat; receipt?: PendingThought | null } | { stage: 'restoring' } | { stage: 'restore-error'; message: string }
+  { stage: 'error'; request: MockCreateChatRequest; message: string } | { stage: 'locked'; chat: LockedChat; receipt?: PendingThought | null; basicLearning?: BasicLearningTransition } | { stage: 'restoring' } | { stage: 'restore-error'; message: string }
 const emptyDraft = (): QuestionDraft => ({ question: '', code: '', type: 'FREE' })
 
 const key = workspaceKey(import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCKS === 'true')

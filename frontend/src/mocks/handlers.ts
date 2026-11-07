@@ -1,3 +1,4 @@
+import type { BasicLearningTransition } from '../types/learning.ts'
 import { openedHints } from './hintFixtures.ts'
 import { stuckPoints } from '../types/hints.ts'
 import type { StuckPoint, HintLevel } from '../types/hints.ts'
@@ -24,7 +25,7 @@ import type { ComparisonResult } from '../types/comparison.ts'
 import { getPreparation } from './chatFixtures.ts'
 
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario }
+type Options = { persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
@@ -33,7 +34,10 @@ export function createChatHandlers(options: Options = {}) {
   const requests = persistentMap<string, Entry>('requests', options.persistence)
   const chats = persistentMap<string, LockedChat>('chats', options.persistence)
   const thoughts = persistentMap<string, PendingThought>('thoughts', options.persistence)
-  const hints = persistentMap<string, { level: HintLevel; stuckPoint: StuckPoint | null }>('hints', options.persistence)
+  const hints = persistentMap<string, { level: HintLevel; stuckPoint: StuckPoint | null; stillDifficult?: boolean }>('hints', options.persistence)
+  const basicLearning = persistentMap<string, BasicLearningTransition>('basicLearning', options.persistence)
+  const basicRequests = persistentMap<string, string>('basicRequests', options.persistence)
+  const basicAttempts = persistentMap<string, number>('basicAttempts', options.persistence)
   const results = new Map<string, ComparisonResult>()
   const settings = persistentMap<string, { saved: boolean; comparison: ComparisonScenario }>('settings', options.persistence)
   const usesSaved = (chatId: string) => settings.get(chatId)?.saved ?? false
@@ -58,7 +62,7 @@ export function createChatHandlers(options: Options = {}) {
       const chat = chats.get(String(params.chatId))
       if (!chat) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       const saved = hints.get(chat.id) ?? { level: 0 as const, stuckPoint: null }
-      return HttpResponse.json({ chatId: chat.id, ...saved, hints: openedHints(chat, saved.level) })
+      return HttpResponse.json({ chatId: chat.id, ...saved, stillDifficult: saved.stillDifficult ?? false, basicLearning: basicLearning.get(chat.id) ?? null, hints: openedHints(chat, saved.level) })
     }),
     http.post(`${path}/:chatId/hints`, async ({ request, params }) => {
       const chat = chats.get(String(params.chatId))
@@ -70,7 +74,7 @@ export function createChatHandlers(options: Options = {}) {
         body = value as Record<string, unknown>
       } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
       // Recheck after awaiting the body: thought submission may have raced this request.
-      if (thoughts.has(chat.id)) return HttpResponse.json({ code: 'ALREADY_SUBMITTED' }, { status: 409 })
+      if (thoughts.has(chat.id) || basicLearning.has(chat.id)) return HttpResponse.json({ code: 'ALREADY_SUBMITTED' }, { status: 409 })
       const saved = hints.get(chat.id) ?? { level: 0 as HintLevel, stuckPoint: null as StuckPoint | null }
       let next = { ...saved }
       if (Object.keys(body).length !== 1) return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
@@ -83,9 +87,46 @@ export function createChatHandlers(options: Options = {}) {
         if (!stuckPoints.includes(body.stuckPoint as StuckPoint)) return HttpResponse.json({ code: 'INVALID_STUCK_POINT' }, { status: 400 })
         if (saved.level < 1) return HttpResponse.json({ code: 'HINT_ORDER_REQUIRED' }, { status: 409 })
         next.stuckPoint = body.stuckPoint as StuckPoint
+      } else if ('stillDifficult' in body) {
+        if (typeof body.stillDifficult !== 'boolean') return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+        if (saved.level !== 2) return HttpResponse.json({ code: 'HINT_ORDER_REQUIRED' }, { status: 409 })
+        next.stillDifficult = body.stillDifficult
       } else return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       hints.set(chat.id, next)
-      return HttpResponse.json({ chatId: chat.id, ...next, hints: openedHints(chat, next.level) })
+      return HttpResponse.json({ chatId: chat.id, ...next, stillDifficult: next.stillDifficult ?? false, basicLearning: null, hints: openedHints(chat, next.level) })
+    }),
+    http.post(`${path}/:chatId/basic-learning`, async ({ params, request }) => {
+      const chatId = String(params.chatId)
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      let body: Record<string, unknown>
+      try {
+        const raw = await request.json()
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error()
+        body = raw as Record<string, unknown>
+      } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
+      if (Object.keys(body).length !== 1 || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) {
+        return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+      }
+      const owner = basicRequests.get(body.clientRequestId)
+      if (owner && owner !== chatId) return HttpResponse.json({ code: 'REQUEST_CONFLICT' }, { status: 409 })
+      if (thoughts.has(chatId)) return HttpResponse.json({ code: 'LEARNING_PATH_CONFLICT' }, { status: 409 })
+      let saved = basicLearning.get(chatId)
+      if (!saved) {
+        const help = hints.get(chatId)
+        if (help?.level !== 2 || !help.stuckPoint || help.stillDifficult !== true) {
+          return HttpResponse.json({ code: 'BASIC_CONDITIONS_REQUIRED' }, { status: 409 })
+        }
+        // Commit synchronously before the async acknowledgement. One path wins any race.
+        saved = { chatId, transitionId: crypto.randomUUID(), learningPath: 'BASIC', status: 'AWAITING_CONTENT', excludeFromGrowth: true }
+        basicLearning.set(chatId, saved)
+      }
+      basicRequests.set(body.clientRequestId, chatId)
+      const attempt = (basicAttempts.get(chatId) ?? 0) + 1
+      basicAttempts.set(chatId, attempt)
+      const scenario = options.basicScenario?.() ?? 'success'
+      await delay(options.delayMs ?? (scenario === 'slow' ? 5000 : 500))
+      if (scenario === 'error' || (scenario === 'error-once' && attempt === 1)) return HttpResponse.json({ code: 'BASIC_ACK_FAILED' }, { status: 503 })
+      return HttpResponse.json(saved, { status: 202 })
     }),
     http.post(path, async ({ request }) => {
       let body: Record<string, unknown>
@@ -146,6 +187,7 @@ export function createChatHandlers(options: Options = {}) {
         !body.clientRequestId || body.clientRequestId.length > 100) {
         return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       }
+      if (basicLearning.has(chatId)) return HttpResponse.json({ code: 'LEARNING_PATH_CONFLICT' }, { status: 409 })
       const error = validateThought(body.thought)
       if (error) return HttpResponse.json({ code: error === THOUGHT_TOO_LONG ? 'THOUGHT_TOO_LONG' : 'THOUGHT_INVALID', message: error }, { status: 400 })
       const normalized = thoughtMetrics(body.thought).normalized
@@ -215,7 +257,7 @@ export function createChatHandlers(options: Options = {}) {
     http.get(`${path}/:chatId`, ({ params }) => {
       const chat = chats.get(String(params.chatId))
       const saved = thoughts.get(String(params.chatId))
-      return chat ? HttpResponse.json({ ...readLockedChat(chat), ...(saved ? { thoughtId: saved.thoughtId, thought: saved.thought, analysis: analyses.get(String(params.chatId)) } : {}) }) : HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      return chat ? HttpResponse.json({ ...readLockedChat(chat), learningPath: basicLearning.has(chat.id) ? 'BASIC' : 'SELF', ...(basicLearning.has(chat.id) ? { basicLearning: basicLearning.get(chat.id) } : {}), ...(saved ? { thoughtId: saved.thoughtId, thought: saved.thought, analysis: analyses.get(String(params.chatId)) } : {}) }) : HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
     }),
   ]
 }
@@ -224,6 +266,10 @@ export const handlers = createChatHandlers({
   persistence: typeof sessionStorage === 'undefined' ? undefined : {
     read: key => readSession(`deveil:mock-server:v1:${key}`),
     write: (key, value) => { writeSession(`deveil:mock-server:v1:${key}`, value) },
+  },
+  basicScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('basic')
+    return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'
   },
   demo: () => new URL(location.href).searchParams.get('demo') === 'true',
   comparisonScenario: () => {

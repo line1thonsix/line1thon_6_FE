@@ -1,9 +1,9 @@
 import { MOCK_CHATS_PATH } from './mockChatContract'
 import { readHintState } from './hintState'
-import type { StuckPoint } from '../types/hints'
+import type { HintInput } from '../types/hints'
 
 // Mock-only provisional contract; never forward demo operations to an actual backend.
-export async function requestMockHints(chatId: string, signal: AbortSignal, input?: { level: 1 | 2 } | { stuckPoint: StuckPoint }) {
+export async function requestMockHints(chatId: string, signal: AbortSignal, input?: HintInput) {
   if (!import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCKS !== 'true') throw new Error('힌트는 Mock 모드에서 사용할 수 있어요.')
   const response = await fetch(`${MOCK_CHATS_PATH}/${encodeURIComponent(chatId)}/hints`, {
     method: input ? 'POST' : 'GET', signal,
