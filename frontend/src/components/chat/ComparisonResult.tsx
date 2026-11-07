@@ -13,7 +13,7 @@ function ComparisonContent({ result }: { result: Result }) {
   const counts = findingCounts(result.findings)
   const visible = filterFindings(result.findings, filter)
   return <section aria-label="관점 비교 결과" className="flex flex-col gap-3">
-    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-body-lg">이제 두 관점을 함께 볼까요?</p><span className="rounded-control bg-brand-subtle px-2 py-1 text-caption text-brand-deep">직접 생각 작성</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-body-lg">이제 두 관점을 함께 볼까요?</p><span className="rounded-control bg-brand-subtle px-2 py-1 text-caption text-brand-deep">직접 생각 작성</span>{result.responseSource === 'SAVED_EXAMPLE' && <span className="rounded-control bg-brand-subtle px-2 py-1 text-caption text-brand-deep">저장 예시</span>}</div>
     <div className="grid grid-cols-2 gap-3" aria-label="두 관점 비교">
       <section className="rounded-panel bg-me-surface p-4" aria-label="나의 첫 생각"><h2 className="text-body font-medium">나의 첫 생각</h2><p className="mt-2 whitespace-pre-wrap text-body break-words">{result.thought}</p></section>
       <section className="rounded-panel bg-ai-surface p-4" aria-label="AI의 참고 관점"><h2 className="text-body font-medium">AI의 참고 관점</h2><p className="mt-2 whitespace-pre-wrap text-body break-words">{result.referenceAnswer}</p></section>

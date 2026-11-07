@@ -48,6 +48,7 @@ export function readComparisonResult(value: unknown, originalThought: string): C
   }
   if (!findings.length) throw new ComparisonValidationError('empty')
   return { chatId: v.chatId, jobId: v.jobId, resultId: v.resultId, status: 'DONE', learningPath: 'SELF',
+    ...(v.responseSource === 'SAVED_EXAMPLE' ? { responseSource: 'SAVED_EXAMPLE' as const } : {}),
     thought: originalThought, referenceAnswer: v.referenceAnswer, findings }
 }
 export function findingCounts(findings: Finding[]): Record<FindingFilter, number> {

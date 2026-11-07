@@ -8,10 +8,11 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { useAnalysis } from '../../hooks/useAnalysis'
 import { useThoughtSubmission } from '../../hooks/useThoughtSubmission'
+import type { PendingThought } from '../../types/thought'
 import type { LockedChat } from '../../types/chat'
 
-export function ThoughtFlow({ chat }: { chat: LockedChat }) {
-  const thought = useThoughtSubmission(chat.id)
+export function ThoughtFlow({ chat, restoredReceipt }: { chat: LockedChat; restoredReceipt?: PendingThought | null }) {
+  const thought = useThoughtSubmission(chat.id, restoredReceipt)
   const analysis = useAnalysis(chat.id, thought.receipt?.analysis.jobId ?? null)
   const completedResultId = analysis.completion?.resultId
   const conversation = useRef<HTMLDivElement>(null)

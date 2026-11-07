@@ -1,3 +1,7 @@
+import { persistentMap } from './persistence.ts'
+import type { MockPersistence } from './persistence.ts'
+import { buildSavedExample, isSavedExample } from './savedExamples.ts'
+import { readSession, writeSession } from '../storage/session.ts'
 import { http, HttpResponse } from 'msw/http'
 import { delay } from 'msw'
 import { MOCK_CHATS_PATH } from '../api/mockChatContract.ts'
@@ -17,30 +21,34 @@ import type { ComparisonResult } from '../types/comparison.ts'
 import { getPreparation } from './chatFixtures.ts'
 
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario }
+type Options = { persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
 export function createChatHandlers(options: Options = {}) {
   const path = options.origin ? new URL(MOCK_CHATS_PATH, options.origin).href : MOCK_CHATS_PATH
-  const requests = new Map<string, Entry>()
-  const chats = new Map<string, LockedChat>()
-  const thoughts = new Map<string, PendingThought>()
+  const requests = persistentMap<string, Entry>('requests', options.persistence)
+  const chats = persistentMap<string, LockedChat>('chats', options.persistence)
+  const thoughts = persistentMap<string, PendingThought>('thoughts', options.persistence)
   const results = new Map<string, ComparisonResult>()
-  const analyses = createAnalysisStore({ now: options.now, scenario: options.analysisScenario, durationMs: options.analysisDurationMs,
+  const settings = persistentMap<string, { saved: boolean; comparison: ComparisonScenario }>('settings', options.persistence)
+  const usesSaved = (chatId: string) => settings.get(chatId)?.saved ?? false
+  const makeResult = (chat: LockedChat, thought: string, jobId: string, resultId: string) =>
+    usesSaved(chat.id) ? buildSavedExample(chat, thought, jobId, resultId) : buildComparisonFixture(chat, thought, jobId, resultId, settings.get(chat.id)?.comparison ?? 'standard')
+  const analyses = createAnalysisStore({ persistence: options.persistence, fallback: usesSaved, now: options.now, scenario: options.analysisScenario, durationMs: options.analysisDurationMs,
     validateResult: (chatId, jobId, resultId) => {
       const chat = chats.get(chatId)
       const saved = thoughts.get(chatId)
       if (!chat || !saved) return false
       try {
-        const raw = buildComparisonFixture(chat, saved.thought, jobId, resultId, options.comparisonScenario?.() ?? 'standard')
+        const raw = makeResult(chat, saved.thought, jobId, resultId)
         const verified = readComparisonResult(raw, saved.thought)
         results.set(resultId, verified)
         return true
       } catch { return false }
     },
   })
-  const thoughtAttempts = new Map<string, number>()
+  const thoughtAttempts = persistentMap<string, number>('thoughtAttempts', options.persistence)
   return [
     http.post(path, async ({ request }) => {
       let body: Record<string, unknown>
@@ -63,7 +71,7 @@ export function createChatHandlers(options: Options = {}) {
       if (entry.fingerprint !== fingerprint) return HttpResponse.json({ code: 'REQUEST_CONFLICT' }, { status: 409 })
       requests.set(key, entry)
       if (entry.result) return HttpResponse.json(readLockedChat(entry.result), { status: 201 })
-      if (!entry.pending) {
+      if (!entry.pending || typeof entry.pending.then !== 'function') {
         entry.attempts += 1
         entry.pending = (async (): Promise<Result> => {
           const scenario = options.scenario?.() ?? 'success'
@@ -74,7 +82,11 @@ export function createChatHandlers(options: Options = {}) {
             ...getPreparation(draft.type, draft.question),
           }
           entry.result = chat
+          settings.set(chat.id, { saved: !!options.demo?.() && isSavedExample(chat) &&
+            ['always-fail', 'fail-once', 'fail-twice', 'invalid-output', 'timeout'].includes(options.analysisScenario?.() ?? 'success'),
+            comparison: options.comparisonScenario?.() ?? 'standard' })
           chats.set(chat.id, chat)
+          requests.set(key, entry)
           return { ok: true, chat }
         })()
       }
@@ -109,6 +121,7 @@ export function createChatHandlers(options: Options = {}) {
         thoughts.set(chatId, saved)
         const analysis = analyses.start(chatId)
         saved.analysis = { jobId: analysis.jobId, status: 'PENDING' }
+        thoughts.set(chatId, saved)
       }
       const attempt = (thoughtAttempts.get(chatId) ?? 0) + 1
       thoughtAttempts.set(chatId, attempt)
@@ -144,7 +157,15 @@ export function createChatHandlers(options: Options = {}) {
       const analysis = analyses.get(chatId)
       if (!analysis || analysis.status !== 'DONE') return HttpResponse.json({ code: 'LOCKED' }, { status: 403 })
       if (new URL(request.url).searchParams.get('resultId') !== analysis.resultId) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
-      const result = results.get(analysis.resultId)
+      let result = results.get(analysis.resultId)
+      if (!result) {
+        const chat = chats.get(chatId)!
+        const saved = thoughts.get(chatId)
+        if (saved) {
+          try { result = readComparisonResult(makeResult(chat, saved.thought, analysis.jobId, analysis.resultId), saved.thought) }
+          catch { return HttpResponse.json({ code: 'RESULT_UNAVAILABLE' }, { status: 503 }) }
+        }
+      }
       if (!result || options.comparisonScenario?.() === 'fetch-error') return HttpResponse.json({ code: 'RESULT_UNAVAILABLE' }, { status: 503 })
       return HttpResponse.json(result)
     }),
@@ -163,13 +184,18 @@ export function createChatHandlers(options: Options = {}) {
 }
 
 export const handlers = createChatHandlers({
+  persistence: typeof sessionStorage === 'undefined' ? undefined : {
+    read: key => readSession(`deveil:mock-server:v1:${key}`),
+    write: (key, value) => { writeSession(`deveil:mock-server:v1:${key}`, value) },
+  },
+  demo: () => new URL(location.href).searchParams.get('demo') === 'true',
   comparisonScenario: () => {
     const scenario = new URL(location.href).searchParams.get('result')
     return ['all-categories', 'sparse', 'invalid-quote', 'all-invalid', 'empty', 'fetch-error'].includes(scenario ?? '') ? scenario as ComparisonScenario : 'standard'
   },
   analysisScenario: () => {
     const scenario = new URL(location.href).searchParams.get('analysis')
-    return ['fail-once', 'fail-twice', 'always-fail', 'invalid-output', 'recover', 'timeout', 'pending'].includes(scenario ?? '') ? scenario as AnalysisScenario : 'success'
+    return ['slow', 'fail-once', 'fail-twice', 'always-fail', 'invalid-output', 'recover', 'timeout', 'pending'].includes(scenario ?? '') ? scenario as AnalysisScenario : 'success'
   },
   thoughtScenario: () => {
     const scenario = new URL(location.href).searchParams.get('thought')

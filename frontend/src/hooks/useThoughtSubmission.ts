@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
+import { readSession, writeSession, thoughtKey } from '../storage/session'
 import { submitMockThought, ThoughtSubmissionError } from '../api/thoughts'
 import { appendThought, thoughtMetrics, validateThought } from '../api/thoughtValidation'
 import type { MockSubmitThoughtRequest } from '../api/mockChatContract'
 import type { PendingThought, ThoughtPhase } from '../types/thought'
 
-export function useThoughtSubmission(chatId: string) {
-  const [draft, setDraft] = useState('')
-  const [phase, setPhase] = useState<ThoughtPhase>('writing')
+export function useThoughtSubmission(chatId: string, restoredReceipt: PendingThought | null = null) {
+  const [initialDraft] = useState(() => { const saved = readSession(thoughtKey(chatId)); return restoredReceipt?.thought ?? (typeof saved === 'string' ? saved : '') })
+  const [draft, setDraft] = useState(initialDraft)
+  const [phase, setPhase] = useState<ThoughtPhase>(restoredReceipt ? 'pending' : 'writing')
   const [feedback, setFeedback] = useState('')
-  const [receipt, setReceipt] = useState<PendingThought | null>(null)
+  const [receipt, setReceipt] = useState<PendingThought | null>(restoredReceipt)
   const active = useRef<AbortController | null>(null)
   const submitted = useRef<MockSubmitThoughtRequest | null>(null)
-  const latestDraft = useRef('')
+  const latestDraft = useRef(initialDraft)
   useEffect(() => () => { const controller = active.current; active.current = null; controller?.abort() }, [])
 
   function change(next: string) {
-    if (submitted.current) return
+    if (submitted.current || receipt) return
+    writeSession(thoughtKey(chatId), next)
     latestDraft.current = next
     setDraft(next)
     if (feedback || thoughtMetrics(next).length > 2000) setFeedback(validateThought(next) ?? '')
@@ -32,7 +35,7 @@ export function useThoughtSubmission(chatId: string) {
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
       const saved = await submitMockThought(chatId, request, controller.signal)
-      if (active.current === controller) { setReceipt(saved); setPhase('pending') }
+      if (active.current === controller) { writeSession(thoughtKey(chatId), null); setReceipt(saved); setPhase('pending') }
     } catch (error: unknown) {
       if (active.current !== controller) return
       if (error instanceof ThoughtSubmissionError && error.kind === 'validation') {
@@ -48,7 +51,7 @@ export function useThoughtSubmission(chatId: string) {
   }
   function submit() {
     // Set ref before scheduling work to block clicks and Enter in the same render.
-    if (submitted.current || active.current) return
+    if (receipt || submitted.current || active.current) return
     const text = latestDraft.current
     const error = validateThought(text)
     setFeedback(error ?? '')

@@ -1,9 +1,11 @@
+import { persistentMap } from './persistence.ts'
+import type { MockPersistence } from './persistence.ts'
 import { ANALYSIS_TIMEOUT_MS } from '../types/analysis.ts'
 import type { AnalysisSnapshot, MockAnalysisRetryRequest } from '../types/analysis.ts'
 import { readAnalysisSnapshot } from '../api/analysisSnapshot.ts'
 
-export type AnalysisScenario = 'success' | 'fail-once' | 'fail-twice' | 'always-fail' | 'invalid-output' | 'recover' | 'timeout' | 'pending'
-type Options = { now?: () => number; scenario?: () => AnalysisScenario; durationMs?: number; validateResult?: (chatId: string, jobId: string, resultId: string) => boolean }
+export type AnalysisScenario = 'success' | 'slow' | 'fail-once' | 'fail-twice' | 'always-fail' | 'invalid-output' | 'recover' | 'timeout' | 'pending'
+type Options = { persistence?: MockPersistence; fallback?: (chatId: string) => boolean; now?: () => number; scenario?: () => AnalysisScenario; durationMs?: number; validateResult?: (chatId: string, jobId: string, resultId: string) => boolean }
 type Job = { snapshot: AnalysisSnapshot; scenario: AnalysisScenario; invalidOutput?: boolean }
 export class MockAnalysisError extends Error {
   readonly code: string
@@ -11,9 +13,8 @@ export class MockAnalysisError extends Error {
 }
 export function createAnalysisStore(options: Options = {}) {
   const now = options.now ?? Date.now
-  const duration = options.durationMs ?? 3000
-  const jobs = new Map<string, Job>()
-  const retries = new Map<string, { chatId: string; jobId: string }>()
+  const jobs = persistentMap<string, Job>('jobs', options.persistence)
+  const retries = persistentMap<string, { chatId: string; jobId: string }>('retries', options.persistence)
   function makeJob(attempt: number): Job {
     const startedAt = now()
     return { snapshot: { jobId: crypto.randomUUID(), status: 'PENDING', attempt, maxAttempts: 3, startedAt, deadlineAt: startedAt + ANALYSIS_TIMEOUT_MS }, scenario: options.scenario?.() ?? 'success' }
@@ -21,19 +22,22 @@ export function createAnalysisStore(options: Options = {}) {
   function get(chatId: string): AnalysisSnapshot | null {
     const job = jobs.get(chatId)
     if (!job) return null
+    // Persist the scenario with the job so refresh cannot restart the delay.
+    const duration = (options.durationMs ?? 3000) * (job.scenario === 'slow' ? 10 : 1)
     const snapshot = job.snapshot
     if (snapshot.status === 'PENDING') {
       const elapsed = now() - snapshot.startedAt
-      const fail = job.scenario === 'always-fail' || job.scenario === 'invalid-output' ||
+      const fallback = !!options.fallback?.(chatId)
+      const fail = !fallback && (job.scenario === 'always-fail' || job.scenario === 'invalid-output' ||
         (job.scenario === 'fail-once' && snapshot.attempt === 1) ||
-        (job.scenario === 'fail-twice' && snapshot.attempt <= 2)
+        (job.scenario === 'fail-twice' && snapshot.attempt <= 2))
       // Resolve by server completion time even if the browser polls late.
-      const neverFinishes = ['timeout', 'pending'].includes(job.scenario)
-      const finishesAfter = duration * (fail || job.scenario === 'recover' || job.invalidOutput ? 2 : 1)
+      const neverFinishes = !fallback && ['timeout', 'pending'].includes(job.scenario)
+      const finishesAfter = duration * (fail || job.scenario === 'recover' || fallback || job.invalidOutput ? 2 : 1)
       // Failed AI/invalid output gets exactly one internal re-call, not a new user attempt.
       if (elapsed >= ANALYSIS_TIMEOUT_MS && (neverFinishes || finishesAfter >= ANALYSIS_TIMEOUT_MS)) job.snapshot = { ...snapshot, status: 'FAILED', reason: 'TIMEOUT' }
       else if (fail && elapsed >= duration * 2) job.snapshot = { ...snapshot, status: 'FAILED', reason: job.scenario === 'invalid-output' ? 'INVALID_OUTPUT' : 'AI_ERROR' }
-      else if (!fail && !neverFinishes && elapsed >= duration * (job.scenario === 'recover' ? 2 : 1)) {
+      else if (!fail && !neverFinishes && elapsed >= duration * (job.scenario === 'recover' || fallback ? 2 : 1)) {
         // A result must contain at least one valid, source-grounded finding before DONE.
         const validate = () => {
           const resultId = crypto.randomUUID()
@@ -54,6 +58,7 @@ export function createAnalysisStore(options: Options = {}) {
         }
       }
     }
+    jobs.set(chatId, job)
     return readAnalysisSnapshot(job.snapshot)
   }
   function start(chatId: string): AnalysisSnapshot {

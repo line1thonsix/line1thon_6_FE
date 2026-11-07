@@ -10,6 +10,7 @@ export type Finding = FindingBase & (
 )
 export type ComparisonResult = {
   chatId: string; jobId: string; resultId: string; status: 'DONE'; learningPath: 'SELF'
+  responseSource?: 'SAVED_EXAMPLE'
   thought: string; referenceAnswer: string; findings: Finding[]
 }
 export type FindingFilter = 'ALL' | FindingCategory

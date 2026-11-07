@@ -1,4 +1,4 @@
-import type { QuestionType } from '../types/chat'
+import type { QuestionType } from '../types/chat.ts'
 
 // 화면용 콘텐츠이며 실제 API 계약과 분리합니다.
 export const exampleQuestions: { label: string; question: string; type: QuestionType }[] = [
