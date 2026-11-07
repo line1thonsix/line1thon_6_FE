@@ -1,3 +1,5 @@
+import { buildBasicLearningFixture } from './basicLearningFixtures.ts'
+import { readBasicLearningResult } from '../api/basicLearningResultState.ts'
 import type { BasicLearningTransition } from '../types/learning.ts'
 import { openedHints } from './hintFixtures.ts'
 import { stuckPoints } from '../types/hints.ts'
@@ -24,8 +26,9 @@ import { readComparisonResult } from '../api/comparisonResult.ts'
 import type { ComparisonResult } from '../types/comparison.ts'
 import { getPreparation } from './chatFixtures.ts'
 
+type BasicResultScenario = 'success' | 'error-once' | 'error' | 'slow' | 'empty' | 'invalid'
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
+type Options = { basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
@@ -38,6 +41,7 @@ export function createChatHandlers(options: Options = {}) {
   const basicLearning = persistentMap<string, BasicLearningTransition>('basicLearning', options.persistence)
   const basicRequests = persistentMap<string, string>('basicRequests', options.persistence)
   const basicAttempts = persistentMap<string, number>('basicAttempts', options.persistence)
+  const basicResults = persistentMap<string, { resultId: string; attempts: number }>('basicResults', options.persistence)
   const results = new Map<string, ComparisonResult>()
   const settings = persistentMap<string, { saved: boolean; comparison: ComparisonScenario }>('settings', options.persistence)
   const usesSaved = (chatId: string) => settings.get(chatId)?.saved ?? false
@@ -94,6 +98,34 @@ export function createChatHandlers(options: Options = {}) {
       } else return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       hints.set(chat.id, next)
       return HttpResponse.json({ chatId: chat.id, ...next, stillDifficult: next.stillDifficult ?? false, basicLearning: null, hints: openedHints(chat, next.level) })
+    }),
+    http.get(`${path}/:chatId/basic-learning/result`, async ({ params, request }) => {
+      const chatId = String(params.chatId)
+      const chat = chats.get(chatId)
+      if (!chat) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      const transition = basicLearning.get(chatId)
+      const help = hints.get(chatId)
+      // Only server-owned F-09 state grants access. Client path/status/conditions are ignored.
+      if (!transition || thoughts.has(chatId) || help?.level !== 2 || !help.stuckPoint || help.stillDifficult !== true) {
+        return HttpResponse.json({ code: 'BASIC_ACCESS_DENIED' }, { status: 403 })
+      }
+      if (new URL(request.url).searchParams.get('transitionId') !== transition.transitionId) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      const metadata = basicResults.get(chatId) ?? { resultId: crypto.randomUUID(), attempts: 0 }
+      basicResults.set(chatId, metadata)
+      const scenario = options.basicResultScenario?.() ?? 'success'
+      await delay(options.basicResultDelayMs ?? options.delayMs ?? (scenario === 'slow' ? 5000 : 900))
+      // Abandoned GETs must not consume the first-error scenario or publish anything.
+      if (request.signal.aborted) return new HttpResponse(null, { status: 499 })
+      metadata.attempts += 1
+      basicResults.set(chatId, metadata)
+      if (scenario === 'error' || (scenario === 'error-once' && metadata.attempts === 1)) return HttpResponse.json({ code: 'BASIC_RESULT_UNAVAILABLE' }, { status: 503 })
+      try {
+        const raw = buildBasicLearningFixture(chat, transition, metadata.resultId)
+        if (scenario === 'empty') raw.concept = ''
+        if (scenario === 'invalid') raw.steps = [] as unknown as typeof raw.steps
+        // No partial answer if any required section is empty/invalid.
+        return HttpResponse.json(readBasicLearningResult(raw, chatId, transition.transitionId))
+      } catch { return HttpResponse.json({ code: 'BASIC_RESULT_INVALID' }, { status: 503 }) }
     }),
     http.post(`${path}/:chatId/basic-learning`, async ({ params, request }) => {
       const chatId = String(params.chatId)
@@ -266,6 +298,10 @@ export const handlers = createChatHandlers({
   persistence: typeof sessionStorage === 'undefined' ? undefined : {
     read: key => readSession(`deveil:mock-server:v1:${key}`),
     write: (key, value) => { writeSession(`deveil:mock-server:v1:${key}`, value) },
+  },
+  basicResultScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('basicResult')
+    return ['error-once', 'error', 'slow', 'empty', 'invalid'].includes(scenario ?? '') ? scenario as BasicResultScenario : 'success'
   },
   basicScenario: () => {
     const scenario = new URL(location.href).searchParams.get('basic')

@@ -1,6 +1,6 @@
 import { useHints } from '../../hooks/useHints'
 import type { BasicLearningTransition } from '../../types/learning'
-import { BasicLearningPending } from './BasicLearningPending'
+import { BasicLearningResult } from './BasicLearningResult'
 import { useEffect, useRef } from 'react'
 import { QuestionBubble } from './QuestionBubble'
 import { QuestionComposer } from './QuestionComposer'
@@ -29,7 +29,7 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
     thought.insert(text)
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
   }
-  if (basicLearning) return <BasicLearningPending chat={chat} transition={basicLearning} draft={thought.draft} />
+  if (basicLearning) return <BasicLearningResult chat={chat} transition={basicLearning} draft={thought.draft} />
   return <>
     <div ref={conversation} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">

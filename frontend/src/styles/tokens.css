@@ -1,4 +1,8 @@
 @theme {
+  --radius-learning-card: 14px;
+  --spacing-learning-card: 18px;
+  --color-basic-line: #c9dccb;
+  --color-basic-fg: #4f7656;
   --color-basic-surface: #e1ebe1;
   --radius-hint: 33px;
   --spacing-hint-x: 30px;
