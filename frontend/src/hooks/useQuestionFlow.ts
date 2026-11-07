@@ -1,3 +1,5 @@
+import { redactValue } from '../security/redaction'
+import { notifyRedaction } from '../security/redactionNotice'
 import type { BasicLearningTransition } from '../types/learning'
 import { useEffect, useRef, useState } from 'react'
 import { restoreMockChat } from '../api/restoreChat'
@@ -59,7 +61,7 @@ export function useQuestionFlow() {
     const timeout = setTimeout(() => controller.abort('timeout'), timeoutMs)
     try {
       const chat = await createMockChat(request, controller.signal)
-      if (active.current === controller) { writeSession(key, { draft: request, chatId: chat.id }); setFlow({ stage: 'locked', chat }) }
+      if (active.current === controller) { writeSession(key, { draft: chat, chatId: chat.id }); setDraft(chat); setFlow({ stage: 'locked', chat }) }
     } catch (error: unknown) {
       if (active.current === controller) setFlow({
         stage: 'error', request,
@@ -83,13 +85,15 @@ export function useQuestionFlow() {
   }, [initial])
   function submit(value: QuestionDraft = draft) {
     if (submitted.current) return
-    const error = validateQuestion(value)
+    const safe = redactValue(value)
+    if (safe.redacted) { notifyRedaction(); setDraft(safe.value) }
+    const error = validateQuestion(value) ?? validateQuestion(safe.value)
     setValidation(error ?? '')
     if (error) return
     submitted.current = true
-    setDraft(value)
-    const request = { ...value, clientRequestId: crypto.randomUUID() }
-    writeSession(key, { draft: value, request })
+    setDraft(safe.value)
+    const request = { ...safe.value, clientRequestId: crypto.randomUUID() }
+    writeSession(key, { draft: safe.value, request })
     void run(request)
   }
   function reset() {

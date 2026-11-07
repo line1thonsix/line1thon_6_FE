@@ -1,3 +1,4 @@
+import { questionTypeLabel } from '../../data/questionTypes'
 import { useHints } from '../../hooks/useHints'
 import type { BasicLearningTransition } from '../../types/learning'
 import { BasicLearningResult } from './BasicLearningResult'
@@ -34,6 +35,8 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
     <div ref={conversation} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">
         <QuestionBubble draft={chat} />
+        {chat.classification?.source === 'MOCK_AUTO' && <p role="status" className="text-caption text-secondary">Mock 자동 분류: {questionTypeLabel(chat.type)}</p>}
+        {chat.classification?.source === 'FALLBACK' && <p role="status" className="text-caption text-secondary">유형을 분류하지 못해 자유롭게로 진행해요.</p>}
         {thought.phase === 'writing' ? <LockedAnswer hints={hints} chat={chat} thought={thought.draft} onInsert={insert} /> : <>
           <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{thought.receipt?.thought ?? thought.draft}</p></section></div>
           {thought.phase !== 'pending' && <section aria-label="생각 제출 상태" aria-busy={thought.phase === 'submitting'}>

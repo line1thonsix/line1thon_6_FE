@@ -1,3 +1,4 @@
+import { questionPerspectives } from '../data/questionPerspectives.ts'
 import type { LockedChat } from '../types/chat.ts'
 import type { ComparisonResult, Finding } from '../types/comparison.ts'
 
@@ -8,9 +9,11 @@ export function buildComparisonFixture(chat: LockedChat, thought: string, jobId:
   const uniqueQuote = sentences.find(text => text.includes('console.log')) ?? sentences[sentences.length - 1] ?? quote
   const conflictQuote = sentences.find(text => /항상|비어 있을|undefined는 빈 배열/u.test(text)) ?? quote
   const debugging = /users/i.test(chat.question + chat.code)
-  const referenceAnswer = debugging
+  const baseAnswer = debugging
     ? '처음 렌더링될 때는 fetch 결과가 오기 전이라 users가 undefined일 수 있어요. 그 상태에서 users.map을 호출하면 오류가 나요. useState([])처럼 초기값을 주거나 데이터가 준비되었는지 확인할 수 있어요. 실제 응답이 배열인지도 확인해 보세요.'
     : '질문의 조건을 먼저 나누고, 현재 값과 실행 순서를 관찰해 보세요. 작은 예시에서 기대한 동작과 실제 동작을 비교하면 원인이나 선택 근거를 구체적으로 확인할 수 있어요. 적용 조건과 예외를 함께 검증하는 관점도 참고해 보세요.'
+  const axes = questionPerspectives[chat.type]
+  const referenceAnswer = baseAnswer + (axes.length ? `\n확인할 관점: ${axes.join(', ')}.` : '')
   const common: Finding = { id: 'common', category: 'COMMON', title: '내 접근과 맞닿는 부분', userQuote: quote,
     aiPerspective: debugging ? '처음 렌더링 때의 값을 확인하는 관점이에요.' : '조건을 나누고 관찰 가능한 값부터 확인하는 관점이에요.',
     reason: '입력한 생각에서 확인하려는 지점을 출발점으로 삼았어요. 작은 단위로 관찰하는 접근과 맞닿아 있어요.',
@@ -18,7 +21,7 @@ export function buildComparisonFixture(chat: LockedChat, thought: string, jobId:
     ...(debugging ? { verificationCode: 'console.log(users); // 첫 렌더링에서 값 확인' } : {}) }
   const complement: Finding = { id: 'complement', category: 'COMPLEMENT', title: '한 가지 더 확인할 조건',
     aiPerspective: debugging ? 'users가 빈 배열일 때와 undefined일 때는 달라요. 초기값과 응답 형식을 함께 확인해 보세요.' : '같은 접근이 다른 입력이나 예외 조건에서도 동작하는지 확인해 볼 수 있어요.',
-    reason: '추가 조건을 확인하면 생각을 적용할 수 있는 범위를 더 구체적으로 알 수 있어요.',
+    reason: '추가 조건을 확인하면 생각을 적용할 수 있는 범위를 더 구체적으로 알 수 있어요.' + (axes.length ? ` ${axes.join(', ')} 관점에서 함께 확인해 보세요.` : ''),
     conditions: debugging ? '데이터가 오기 전에 목록을 렌더링하거나 API 응답 형식이 달라지는 경우에 필요한 조건이에요.' : '입력의 형태나 실행 순서가 달라질 수 있는 상황에서 확인해 보세요.',
     verification: debugging ? 'useState()와 useState([])로 각각 바꿔 처음 화면을 비교해 보세요.' : '정상 입력과 경계 입력의 결과를 나눠서 확인해 보세요.',
     ...(debugging ? { verificationCode: 'const [users, setUsers] = useState([]);' } : {}) }

@@ -1,3 +1,4 @@
+import { redactValue } from '../security/redaction.ts'
 import type { PendingThought } from '../types/thought.ts'
 import { validateThought } from './thoughtValidation.ts'
 
@@ -11,6 +12,6 @@ export function readPendingThought(value: unknown): PendingThought {
     typeof analysis.jobId !== 'string' || !analysis.jobId) {
     throw new Error('제출 상태가 올바르지 않아요. 같은 내용으로 다시 확인해 주세요.')
   }
-  return { chatId: v.chatId, status: 'LOCKED', thoughtId: v.thoughtId, thought: v.thought,
-    analysis: { jobId: analysis.jobId, status: 'PENDING' } }
+  return redactValue({ chatId: v.chatId, status: 'LOCKED', thoughtId: v.thoughtId, thought: v.thought,
+    analysis: { jobId: analysis.jobId, status: 'PENDING' } }).value as PendingThought
 }

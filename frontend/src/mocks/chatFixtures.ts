@@ -25,7 +25,7 @@ const preparations: Record<QuestionType, Preparation> = {
   },
 }
 export function getPreparation(type: QuestionType, question: string): Preparation {
-  if (/users/i.test(question)) return {
+  if (type === 'DEBUGGING' && /users/i.test(question)) return {
     choices: ['첫 렌더링 때 users 값', '데이터가 도착하는 시점', 'useState 초기값'],
     exampleSentence: 'users를 처음 렌더링할 때 값이 무엇인지 console.log로 찍어서 확인해 볼래요.',
   }

@@ -1,3 +1,6 @@
+import { redactValue, redactSecrets } from '../security/redaction.ts'
+import { classifyMockQuestion } from './questionClassification.ts'
+import type { ClassificationScenario } from './questionClassification.ts'
 import { buildBasicLearningFixture } from './basicLearningFixtures.ts'
 import { readBasicLearningResult } from '../api/basicLearningResultState.ts'
 import type { BasicLearningTransition } from '../types/learning.ts'
@@ -28,7 +31,7 @@ import { getPreparation } from './chatFixtures.ts'
 
 type BasicResultScenario = 'success' | 'error-once' | 'error' | 'slow' | 'empty' | 'invalid'
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
+type Options = { classificationScenario?: () => ClassificationScenario; basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
@@ -172,7 +175,10 @@ export function createChatHandlers(options: Options = {}) {
         typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) {
         return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       }
-      const draft: QuestionDraft = { question: body.question, code: body.code, type: body.type as QuestionDraft['type'] }
+      const original: QuestionDraft = { question: body.question, code: body.code, type: body.type as QuestionDraft['type'] }
+      const originalError = validateQuestion(original)
+      if (originalError) return HttpResponse.json({ code: 'INVALID_INPUT', message: originalError }, { status: 400 })
+      const draft = redactValue(original).value
       const error = validateQuestion(draft)
       if (error) return HttpResponse.json({ code: 'INVALID_INPUT', message: error }, { status: 400 })
       const key = body.clientRequestId
@@ -187,9 +193,10 @@ export function createChatHandlers(options: Options = {}) {
           const scenario = options.scenario?.() ?? 'success'
           await delay(options.delayMs ?? (scenario === 'slow' ? 5000 : 1200))
           if (scenario === 'error' || (scenario === 'error-once' && entry.attempts === 1)) return { ok: false }
+          const classified = classifyMockQuestion(draft, options.classificationScenario?.())
           const chat: LockedChat = {
-            id: crypto.randomUUID(), status: 'LOCKED', ...draft,
-            ...getPreparation(draft.type, draft.question),
+            id: crypto.randomUUID(), status: 'LOCKED', ...draft, ...classified,
+            ...getPreparation(classified.type, draft.question),
           }
           entry.result = chat
           settings.set(chat.id, { saved: !!options.demo?.() && isSavedExample(chat) &&
@@ -220,9 +227,11 @@ export function createChatHandlers(options: Options = {}) {
         return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       }
       if (basicLearning.has(chatId)) return HttpResponse.json({ code: 'LEARNING_PATH_CONFLICT' }, { status: 409 })
-      const error = validateThought(body.thought)
+      if (body.thought.trim().length > 2000) return HttpResponse.json({ code: 'THOUGHT_TOO_LONG' }, { status: 400 })
+      const safeThought = redactSecrets(body.thought).value
+      const error = validateThought(safeThought)
       if (error) return HttpResponse.json({ code: error === THOUGHT_TOO_LONG ? 'THOUGHT_TOO_LONG' : 'THOUGHT_INVALID', message: error }, { status: 400 })
-      const normalized = thoughtMetrics(body.thought).normalized
+      const normalized = thoughtMetrics(safeThought).normalized
       let saved = thoughts.get(chatId)
       if (saved && saved.thought !== normalized) return HttpResponse.json({ code: 'THOUGHT_IMMUTABLE' }, { status: 409 })
       if (!saved) {
@@ -298,6 +307,10 @@ export const handlers = createChatHandlers({
   persistence: typeof sessionStorage === 'undefined' ? undefined : {
     read: key => readSession(`deveil:mock-server:v1:${key}`),
     write: (key, value) => { writeSession(`deveil:mock-server:v1:${key}`, value) },
+  },
+  classificationScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('classification')
+    return scenario === 'error' || scenario === 'invalid' ? scenario : 'success'
   },
   basicResultScenario: () => {
     const scenario = new URL(location.href).searchParams.get('basicResult')

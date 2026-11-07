@@ -1,3 +1,5 @@
+import { redactSecrets } from '../security/redaction'
+import { notifyRedaction } from '../security/redactionNotice'
 import { useEffect, useRef, useState } from 'react'
 import { readSession, writeSession, thoughtKey } from '../storage/session'
 import { submitMockThought, ThoughtSubmissionError } from '../api/thoughts'
@@ -52,8 +54,13 @@ export function useThoughtSubmission(chatId: string, restoredReceipt: PendingTho
   function submit() {
     // Set ref before scheduling work to block clicks and Enter in the same render.
     if (receipt || submitted.current || active.current) return
-    const text = latestDraft.current
-    const error = validateThought(text)
+    const original = latestDraft.current
+    const safe = redactSecrets(original)
+    const text = safe.value
+    if (safe.redacted) {
+      notifyRedaction(); latestDraft.current = text; setDraft(text); writeSession(thoughtKey(chatId), text)
+    }
+    const error = thoughtMetrics(original).length > 2000 ? validateThought(original) : validateThought(text)
     setFeedback(error ?? '')
     if (error) return
     const request = { thought: text.trim(), clientRequestId: crypto.randomUUID() }

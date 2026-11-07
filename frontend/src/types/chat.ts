@@ -5,6 +5,7 @@ export type QuestionDraft = { question: string; code: string; type: QuestionType
 export type LockedChat = QuestionDraft & {
   id: string
   status: 'LOCKED'
+  classification?: { requestedType: QuestionType; source: 'USER' | 'MOCK_AUTO' | 'FALLBACK' }
   choices: [string, string, string]
   exampleSentence: string
 }

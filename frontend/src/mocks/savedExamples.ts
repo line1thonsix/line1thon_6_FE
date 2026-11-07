@@ -9,7 +9,7 @@ const responses = [
   '버튼 비활성화로 중복 클릭을 줄이고, 서버에서는 같은 결제 요청의 멱등성 키와 처리 상태를 확인해요. 화면 제어만으로는 재전송을 막을 수 없으므로 서버 중복 처리 방지가 함께 필요해요.',
 ]
 export function isSavedExample(chat: LockedChat) {
-  return !chat.code.trim() && exampleQuestions.some(example => example.question === chat.question && example.type === chat.type)
+  return chat.classification?.requestedType !== 'FREE' && !chat.code.trim() && exampleQuestions.some(example => example.question === chat.question && example.type === chat.type)
 }
 export function buildSavedExample(chat: LockedChat, thought: string, jobId: string, resultId: string): ComparisonResult {
   const index = exampleQuestions.findIndex(example => example.question === chat.question && example.type === chat.type)
