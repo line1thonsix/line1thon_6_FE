@@ -25,14 +25,15 @@ test('comparison shows every result card without category filters; expansion con
   assert.equal((html.match(/<article\b/gu) ?? []).length, 5)
   assert.equal((html.match(/aria-expanded="false"/gu) ?? []).length, 5)
   assert.equal(html.includes('비교 항목 필터'), false)
-  assert.equal(html.includes('aria-pressed'), false)
+  assert.doesNotMatch(html, /aria-label="(?:전체|공통|보완|고유|오류|판단 보류) 필터"/u)
   assert.ok(html.includes('두 관점 비교'))
   assert.ok(html.includes('aria-label="AI 근거"'))
   assert.ok(html.includes('aria-label="내 생각 근거"'))
   assert.equal(html.includes('내 생각에는 없던 부분이에요'), false)
   assert.equal(html.includes('AI 참고 관점에는 없던 부분이에요'), false)
   assert.equal(html.includes('바로 한 줄 남기기'), false)
-  assert.equal(html.includes('의견 남기기'), false)
+  assert.ok(html.includes('배운 점 한 줄 남기기'))
+  assert.ok(html.includes('의견 남기기'))
 })
 
 test('completed composer remains visible with only the Figma notice; composing/submitting controls are inactive', () => {

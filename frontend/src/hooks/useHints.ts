@@ -1,3 +1,4 @@
+import { displayedHint, readViewedHint } from '../api/hintNavigation'
 import { restoredHelpTab } from '../data/helpTabs'
 import type { HelpTab } from '../data/helpTabs'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -16,6 +17,8 @@ export function useHints(chatId: string, canTransition: () => boolean) {
   const basicActive = useRef<AbortController | null>(null)
   const key = `deveil:mock:hint-tab:v1:${chatId}`
   const [tab, setTab] = useState<HelpTab>(() => restoredHelpTab(readSession(key)))
+  const viewKey = `deveil:mock:hint-view:v1:${chatId}`
+  const [viewed, setViewed] = useState(() => readViewedHint(readSession(viewKey)))
   const [state, setState] = useState<HintState | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
@@ -32,6 +35,7 @@ export function useHints(chatId: string, canTransition: () => boolean) {
       const next = await requestMockHints(chatId, controller.signal, input)
       if (active.current === controller) {
         setState(next)
+        if (input && 'level' in input) { setViewed(input.level); writeSession(viewKey, input.level) }
         if (next.basicLearning) { requestId.current = null; writeSession(transitionKey, null); setUncertain(false) }
         return next
       }
@@ -41,7 +45,7 @@ export function useHints(chatId: string, canTransition: () => boolean) {
       clearTimeout(timeout)
       if (active.current === controller) { active.current = null; setBusy(false) }
     }
-  }, [chatId, transitionKey])
+  }, [chatId, transitionKey, viewKey])
   useEffect(() => {
     const lifecycle = new AbortController()
     queueMicrotask(() => { if (!lifecycle.signal.aborted) void run() })
@@ -72,14 +76,18 @@ export function useHints(chatId: string, canTransition: () => boolean) {
     writeSession(key, next); setTab(next)
     if (next === 'hints' && !requestId.current && state?.level === 0 && !error) void run({ level: 1 })
   }
-  return { tab, state, busy: busy || transitioning, error, select, transitioning, uncertain, transitionError,
+  function view(level: 1 | 2) {
+    if (active.current || basicActive.current || requestId.current || !state?.hints.some(hint => hint.level === level)) return
+    setViewed(level); writeSession(viewKey, level)
+  }
+  return { currentHint: displayedHint(state, viewed), viewFirst: () => view(1), tab, state, busy: busy || transitioning, error, select, transitioning, uncertain, transitionError,
     transitionBlocked: uncertain || transitioning,
     canWrite: () => !requestId.current && !basicActive.current && !state?.basicLearning,
     transition,
     recheckTransition: async () => { const next = await run(); if (next && !next.basicLearning) await transition() },
     confirmDifficulty: (stillDifficult: boolean) => { if (!requestId.current && state?.level === 2) void run({ stillDifficult }) },
     openFirst: () => { if (!requestId.current && state?.level === 0) void run({ level: 1 }) },
-    openSecond: () => { if (!requestId.current && state?.level === 1) void run({ level: 2 }) },
+    openSecond: () => { if (state?.level === 2) view(2); else if (!requestId.current && state?.level === 1) void run({ level: 2 }) },
     choose: (stuckPoint: StuckPoint) => { if (!requestId.current && state && state.level > 0) void run({ stuckPoint }) },
     retry: () => { void run(retryInput.current) },
   }

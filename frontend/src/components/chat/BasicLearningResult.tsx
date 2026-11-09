@@ -1,3 +1,4 @@
+import { PostResultNotes } from './PostResultNotes'
 import { QuestionBubble } from './QuestionBubble'
 import { Button } from '../ui/Button'
 import { useBasicLearningResult } from '../../hooks/useBasicLearningResult'
@@ -36,7 +37,7 @@ export function BasicLearningResult({ chat, transition, draft }: { chat: LockedC
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-body-lg font-medium">기초부터 함께 살펴볼게요.</h2><span className="rounded-control bg-basic-surface px-2 py-1 text-caption text-basic-fg">도움받아 학습</span></div>
       {state.status === 'loading' && <p role="status" className="rounded-learning-card bg-ai-surface p-4 text-body text-secondary motion-safe:animate-pulse">기초 개념과 작은 예시를 불러오고 있어요…</p>}
       {state.status === 'error' && <div role="alert" className="rounded-learning-card border border-line p-4"><p className="text-body text-secondary">{state.message}</p><Button className="mt-2 text-body text-brand underline" onClick={reload}>기초 학습 다시 불러오기</Button></div>}
-      {state.status === 'ready' && <LearningContent result={state.result} />}
+      {state.status === 'ready' && <><LearningContent result={state.result} /><PostResultNotes key={chat.id} chatId={chat.id} allowFeedback={false} /></>}
     </section>
     <p className="text-caption text-muted">이 경로는 성장 지표에 포함되지 않아요. 다른 주제의 질문은 새 채팅에서 던져 보세요.</p>
     {draft && <details className="text-body"><summary className="cursor-pointer text-brand-deep">보관한 생각 초안</summary><p className="mt-2 whitespace-pre-wrap break-words">{draft}</p></details>}

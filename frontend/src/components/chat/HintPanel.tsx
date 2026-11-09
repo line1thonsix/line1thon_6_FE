@@ -9,14 +9,14 @@ const points: { value: StuckPoint; label: string }[] = [
   { value: 'VERIFICATION', label: '검증 방법을 모르겠어요' },
 ]
 export function HintPanel({ hints, onReturn }: { hints: ReturnType<typeof useHints>; onReturn: () => void }) {
-  const current = hints.state?.hints.at(-1)
+  const current = hints.currentHint
   const eligible = hints.state?.level === 2 && !!hints.state.stuckPoint && hints.state.stillDifficult === true
   return <div className="flex flex-col gap-2" aria-label="단계별 힌트" aria-busy={hints.busy}>
     <div className="rounded-hint bg-ai-surface px-hint-x py-hint-y">
       {current ? <>
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-caption font-medium text-muted">힌트 {current.level} / 2</h3>
-          {current.level === 1 ? <Button className="gap-1 text-caption text-brand" disabled={hints.busy} onClick={hints.openSecond}>조금 더 힌트 주세요<Icon name="hintNext" /></Button> : <Icon name="hintSteps" />}
+          {current.level === 1 ? <Button variant="plain" className="gap-1 text-caption text-brand" disabled={hints.busy} onClick={hints.openSecond}>힌트를 더 볼까요?<Icon name="hintNext" /></Button> : <Button variant="plain" className="gap-1 text-caption text-brand" disabled={hints.busy} onClick={hints.viewFirst}><span className="rotate-180"><Icon name="hintNext" /></span>이전 힌트 보기</Button>}
         </div>
         <p className="mt-0.5 text-body" aria-live="polite">{current.text}</p>
       </> : <Button className="text-body text-brand-deep" disabled={hints.busy || !hints.state} onClick={hints.openFirst}>아직 감이 안 와요 · 힌트</Button>}

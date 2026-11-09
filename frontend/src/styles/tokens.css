@@ -1,4 +1,10 @@
 @theme {
+  --color-demo-sky-soft: #f4f9fc;
+  --color-demo-sky-line: #d6e8f5;
+  --color-demo-sky-ink: #2f6c93;
+  --color-demo-sky-btn: #cfe5f4;
+  --color-demo-disabled: #eef2ed;
+  --color-demo-placeholder: #b3bcb6;
   --radius-learning-card: 14px;
   --spacing-learning-card: 18px;
   --color-basic-line: #c9dccb;

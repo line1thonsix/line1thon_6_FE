@@ -4,6 +4,6 @@ const base = 'w-full rounded-control border border-line-strong bg-page px-3 py-2
 export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={`${base} ${className}`} {...props} />
 }
-export function Textarea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> }) {
-  return <textarea className={`${base} ${className}`} {...props} />
+export function Textarea({ className = '', appearance = 'default', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement>; appearance?: 'default' | 'inline' }) {
+  return <textarea className={`${appearance === 'inline' ? 'bg-transparent text-body text-ink' : base} ${className}`} {...props} />
 }
