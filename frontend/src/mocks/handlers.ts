@@ -18,6 +18,7 @@ import { validateQuestion } from '../api/chatValidation.ts'
 import { readLockedChat } from '../api/lockedChat.ts'
 import { questionTypes } from '../types/chat.ts'
 import type { QuestionDraft, LockedChat } from '../types/chat.ts'
+import { choiceSentence } from '../api/thoughtDraft.ts'
 import { validateThought, thoughtMetrics, THOUGHT_TOO_LONG } from '../api/thoughtValidation.ts'
 import { readPendingThought } from '../api/pendingThought.ts'
 import type { PendingThought } from '../types/thought.ts'
@@ -229,7 +230,22 @@ export function createChatHandlers(options: Options = {}) {
       if (basicLearning.has(chatId)) return HttpResponse.json({ code: 'LEARNING_PATH_CONFLICT' }, { status: 409 })
       if (body.thought.trim().length > 2000) return HttpResponse.json({ code: 'THOUGHT_TOO_LONG' }, { status: 400 })
       const safeThought = redactSecrets(body.thought).value
-      const error = validateThought(safeThought)
+      let manual = safeThought
+      if (body.suggestion !== undefined) {
+        const v = body.suggestion as { index?: unknown; start?: unknown; end?: unknown } | null
+        if (!v || !Number.isInteger(v.index) || Number(v.index) < 0 || Number(v.index) > 2 ||
+          !Number.isInteger(v.start) || !Number.isInteger(v.end) || Number(v.start) < 0 || Number(v.end) <= Number(v.start) || Number(v.end) > safeThought.length) {
+          return HttpResponse.json({ code: 'THOUGHT_INVALID' }, { status: 400 })
+        }
+        const start = Number(v.start), end = Number(v.end)
+        const expected = choiceSentence(chats.get(chatId)!, Number(v.index))
+        const actual = safeThought.slice(start, end)
+        if (![expected, expected.trimEnd(), ' ' + expected, ' ' + expected.trimEnd()].includes(actual)) {
+          return HttpResponse.json({ code: 'THOUGHT_INVALID' }, { status: 400 })
+        }
+        manual = safeThought.slice(0, start) + safeThought.slice(end)
+      }
+      const error = validateThought(safeThought, manual)
       if (error) return HttpResponse.json({ code: error === THOUGHT_TOO_LONG ? 'THOUGHT_TOO_LONG' : 'THOUGHT_INVALID', message: error }, { status: 400 })
       const normalized = thoughtMetrics(safeThought).normalized
       let saved = thoughts.get(chatId)

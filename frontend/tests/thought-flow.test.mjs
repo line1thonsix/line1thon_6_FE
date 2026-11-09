@@ -43,10 +43,12 @@ test('F-07 requires 8 distinct non-whitespace characters, with no semantic gradi
   assert.equal(validateThought('😀😁😂😃😄😅😆😇'.repeat(2)), null)
 })
 
-test('choices count toward the same total, every mock example can be submitted unchanged, insertion never truncates', () => {
+test('choices are excluded from the manual minimum, examples remain editable, and insertion never truncates', () => {
   const choice = '첫 렌더링 때 users 값부터 볼게요. 이유는 '
   assert.equal(thoughtMetrics(choice).length, 26)
-  assert.equal(validateThought(appendThought(choice, '값이 아직 준비되지 않았을 수 있어서예요.')), null)
+  const manual = '입력 조건을 먼저 정리하고 작은 예시에서 실제 값을 출력해 차이를 확인해 볼게요.'
+  assert.equal(validateThought(appendThought(choice, manual), manual), null)
+  assert.equal(validateThought(choice, ''), THOUGHT_GUIDANCE)
   for (const type of ['FREE', 'CONCEPT', 'DEBUGGING', 'PROBLEM_SOLVING', 'DESIGN']) {
     assert.equal(validateThought(getPreparation(type, '질문').exampleSentence), null)
   }

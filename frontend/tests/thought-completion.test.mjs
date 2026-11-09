@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { setupServer } from 'msw/node'
-import { choiceSentence, editThoughtDraft, readThoughtDraft, toggleChoice } from '../src/api/thoughtDraft.ts'
+import { choiceSentence, editThoughtDraft, readThoughtDraft, toggleChoice, manualThought, thoughtSubmission } from '../src/api/thoughtDraft.ts'
 import { appendThought, validateThought, THOUGHT_GUIDANCE, THOUGHT_TOO_LONG } from '../src/api/thoughtValidation.ts'
 import { readSession, writeSession, thoughtKey } from '../src/storage/session.ts'
 import { createChatHandlers } from '../src/mocks/handlers.ts'
@@ -34,25 +34,15 @@ test('matching words typed by the user are never mistaken for the inserted phras
   assert.equal(draft.text, `머리말\n${own}직접 덧붙인 이유`)
 })
 
-test('editing inside an inserted phrase preserves user replacements when the choice is removed or changed', () => {
+test('choice text cannot be replaced, removed or cleared through the textarea', () => {
   const selected = toggleChoice(initial(), chat, 0)
   const start = selected.text.indexOf('부터 볼게요.')
   const edited = editThoughtDraft(selected, selected.text.replace('부터 볼게요.', '를 직접 확인하겠어요.'), { before: selected.text, start, end: start + '부터 볼게요.'.length })
-  const removed = toggleChoice(edited, chat, 0)
-  assert.equal(removed.text, manual + '를 직접 확인하겠어요.')
-  const replaced = toggleChoice(edited, chat, 2)
-  assert.equal(replaced.text, manual + ' ' + choiceSentence(chat, 2) + '를 직접 확인하겠어요.')
-  assert.equal(toggleChoice(replaced, chat, 2).text, removed.text)
-})
-
-test('clearing or replacing the textarea removes stale choice state and remains fully editable', () => {
-  const selected = toggleChoice(initial(), chat, 0)
-  for (const text of ['', '완전히 새로 작성한 문장입니다.']) {
-    const changed = editThoughtDraft(selected, text)
-    assert.equal(changed.choiceIndex, null)
-    assert.equal(toggleChoice(changed, chat, 1).text, appendThought(text, choiceSentence(chat, 1)))
-  }
-  assert.deepEqual(editThoughtDraft(selected, selected.text), selected)
+  assert.equal(edited, selected)
+  for (const text of ['', '완전히 새로 작성한 문장입니다.']) assert.equal(editThoughtDraft(selected, text), selected)
+  const cleared = toggleChoice(selected, chat, 0)
+  assert.equal(cleared.text, manual)
+  assert.equal(editThoughtDraft(cleared, '').text, '')
 })
 
 test('example insertion stays editable and independent from the three choice toggles', () => {
@@ -89,12 +79,12 @@ test('refresh restores selected range ownership; legacy string and split-editor 
   } finally { globalThis.sessionStorage = previous }
 })
 
-test('validation counts the complete editable text, including choice phrases, toward 30/2000 and 8 distinct characters', () => {
+test('validation excludes the choice for minimum length/distinct characters, and includes it in the 2000 limit', () => {
   const shortManual = 'abcdefgh'.repeat(3)
   assert.equal(shortManual.length, 24)
   const selected = toggleChoice(initial(shortManual), chat, 0)
   assert.equal(validateThought(shortManual), THOUGHT_GUIDANCE)
-  assert.equal(validateThought(selected.text), null)
+  assert.equal(validateThought(selected.text, manualThought(selected)), THOUGHT_GUIDANCE)
   assert.equal(validateThought(toggleChoice(selected, chat, 0).text), THOUGHT_GUIDANCE)
   const empty = toggleChoice(initial(''), chat, 0)
   const boundary = editThoughtDraft(empty, empty.text + 'a'.repeat(2000 - empty.text.length))
@@ -102,7 +92,7 @@ test('validation counts the complete editable text, including choice phrases, to
   assert.equal(validateThought(boundary.text + 'a'), THOUGHT_TOO_LONG)
 })
 
-test('Mock accepts the original thought-only contract with a short manual section; failed ack/retry keeps one locked job', async () => {
+test('Mock checks manual-only minimum; failed ack/retry keeps one locked job', async () => {
   const origin = 'http://localhost:9888'
   const post = (path, body) => fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const server = setupServer(...createChatHandlers({ origin, delayMs: 1, thoughtScenario: () => 'error-once' }))
@@ -111,8 +101,11 @@ test('Mock accepts the original thought-only contract with a short manual sectio
     const created = await post('/api/chats', { question: '어떤 조건을 먼저 확인할까요?', code: '', type: 'FREE', clientRequestId: crypto.randomUUID() })
     const locked = await created.json()
     const path = '/api/chats/' + locked.id
-    const draft = toggleChoice(readThoughtDraft('abcdefgh'.repeat(3), locked), locked, 1)
-    const body = { thought: draft.text.trim(), clientRequestId: 'choice-request' }
+    const shortDraft = toggleChoice(readThoughtDraft('abcdefgh'.repeat(3), locked), locked, 1)
+    const rejected = await post(path + '/thoughts', { ...thoughtSubmission(shortDraft), clientRequestId: 'short-choice' })
+    assert.equal(rejected.status, 400)
+    const draft = toggleChoice(readThoughtDraft(manual, locked), locked, 1)
+    const body = { ...thoughtSubmission(draft), clientRequestId: 'choice-request' }
     assert.equal(validateThought(body.thought), null)
     assert.equal((await post(path + '/thoughts', body)).status, 503)
     const restored = await (await fetch(origin + path)).json()

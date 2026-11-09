@@ -1,8 +1,7 @@
 import type { LockedChat } from '../types/chat.ts'
 import { appendThought } from './thoughtValidation.ts'
 
-// The textarea remains fully editable. Ownership records only text inserted by a choice,
-// so toggling it never searches for/deletes matching words authored by the user.
+// Only choice-owned characters are immutable. User text remains editable in the same textarea.
 export type ThoughtDraft = { version: 3; text: string; choiceIndex: number | null; owned: boolean[] }
 export type ThoughtEdit = { before: string; start: number; end: number }
 type Preparation = Pick<LockedChat, 'choices' | 'exampleSentence'>
@@ -27,6 +26,7 @@ export function editThoughtDraft(draft: ThoughtDraft, text: string, edit?: Thoug
       start = edit.start; end = edit.end; nextEnd = insertedEnd
     }
   }
+  if (!canEditThoughtRange(draft, start, end)) return draft
   const owned = [...draft.owned.slice(0, start), ...Array<boolean>(nextEnd - start).fill(false), ...draft.owned.slice(end)]
   return { version: 3, text, owned, choiceIndex: owned.some(Boolean) ? draft.choiceIndex : null }
 }
@@ -50,7 +50,14 @@ export function readThoughtDraft(value: unknown, chat: Preparation): ThoughtDraf
     const v = value as Record<string, unknown>
     if (v.version === 3 && typeof v.text === 'string') {
       if (validIndex(v.choiceIndex) && Array.isArray(v.owned) && v.owned.length === v.text.length && v.owned.every(flag => typeof flag === 'boolean') && v.owned.some(Boolean)) {
-        return { version: 3, text: v.text, choiceIndex: v.choiceIndex, owned: v.owned as boolean[] }
+        const draft: ThoughtDraft = { version: 3, text: v.text, choiceIndex: v.choiceIndex, owned: v.owned as boolean[] }
+        const automatic = draft.text.split('').filter((_, i) => draft.owned[i]).join('')
+        // Older editable drafts may contain fragments. Keep all user-owned text and
+        // reinsert the canonical choice rather than freezing a corrupted sentence.
+        if (automatic.trim() !== choiceSentence(chat, draft.choiceIndex!).trim() || !draft.owned.slice(draft.owned.indexOf(true), draft.owned.lastIndexOf(true) + 1).every(Boolean)) {
+          return toggleChoice(toggleChoice(draft, chat, draft.choiceIndex!), chat, draft.choiceIndex!)
+        }
+        return draft
       }
       return plainDraft(v.text)
     }
@@ -68,4 +75,21 @@ export function readThoughtDraft(value: unknown, chat: Preparation): ThoughtDraf
     }
   }
   return plainDraft('')
+}
+
+export function canEditThoughtRange(draft: ThoughtDraft, start: number, end: number): boolean {
+  if (start < 0 || end < start || end > draft.text.length) return false
+  if (start === end) return !(draft.owned[start - 1] && draft.owned[start])
+  return !draft.owned.slice(start, end).some(Boolean)
+}
+export function manualThought(draft: ThoughtDraft): string {
+  return draft.text.split('').filter((_, i) => !draft.owned[i]).join('')
+}
+export function thoughtSubmission(draft: ThoughtDraft) {
+  const thought = draft.text.trim()
+  if (draft.choiceIndex === null) return { thought }
+  const offset = draft.text.length - draft.text.trimStart().length
+  return { thought, suggestion: { index: draft.choiceIndex,
+    start: Math.max(0, draft.owned.indexOf(true) - offset),
+    end: Math.min(thought.length, draft.owned.lastIndexOf(true) + 1 - offset) } }
 }

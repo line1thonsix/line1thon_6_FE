@@ -56,7 +56,7 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
       </div>
     </div>
     {!analysis.completion && <QuestionComposer draft={chat} mode="locked" validation="" onChange={() => {}} onSubmit={() => {}}
-      thoughtBlocked={hints.transitionBlocked} thought={thought.draft} onThoughtChange={thought.change} thoughtPhase={thought.phase}
+      thoughtBlocked={hints.transitionBlocked} thought={thought.draft} thoughtManual={thought.manual} getThoughtDraft={thought.getDraft} onThoughtRestore={thought.restoreEditor} onThoughtChange={thought.change} thoughtPhase={thought.phase}
       thoughtActionLabel={!analysis.retrying && analysis.snapshot?.status === 'FAILED' ? '분석 실패' : analysis.completion ? '분석 완료' : '분석 대기 중'}
       thoughtFeedback={thought.feedback} onThoughtSubmit={() => { if (hints.canWrite()) thought.submit() }} onThoughtBlur={thought.check} />}
   </>
