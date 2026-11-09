@@ -1,3 +1,5 @@
+import { restoredHelpTab } from '../data/helpTabs'
+import type { HelpTab } from '../data/helpTabs'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { transitionMockBasicLearning } from '../api/basicLearning'
 import { requestMockHints } from '../api/hints'
@@ -13,10 +15,7 @@ export function useHints(chatId: string, canTransition: () => boolean) {
   const [transitioning, setTransitioning] = useState(false)
   const basicActive = useRef<AbortController | null>(null)
   const key = `deveil:mock:hint-tab:v1:${chatId}`
-  const [tab, setTab] = useState<'choices' | 'example' | 'hints'>(() => {
-    const saved = readSession(key)
-    return saved === 'hints' || saved === 'example' ? saved : 'choices'
-  })
+  const [tab, setTab] = useState<HelpTab>(() => restoredHelpTab(readSession(key)))
   const [state, setState] = useState<HintState | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')

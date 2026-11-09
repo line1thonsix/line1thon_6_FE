@@ -1,3 +1,4 @@
+import { defaultQuestionType, newQuestionType } from '../data/questionTypes'
 import { redactValue } from '../security/redaction'
 import { notifyRedaction } from '../security/redactionNotice'
 import type { BasicLearningTransition } from '../types/learning'
@@ -12,7 +13,7 @@ import type { QuestionDraft, LockedChat } from '../types/chat'
 
 type Flow = { stage: 'editing' } | { stage: 'creating'; request: MockCreateChatRequest } |
   { stage: 'error'; request: MockCreateChatRequest; message: string } | { stage: 'locked'; chat: LockedChat; receipt?: PendingThought | null; basicLearning?: BasicLearningTransition } | { stage: 'restoring' } | { stage: 'restore-error'; message: string }
-const emptyDraft = (): QuestionDraft => ({ question: '', code: '', type: 'FREE' })
+const emptyDraft = (): QuestionDraft => ({ question: '', code: '', type: defaultQuestionType })
 
 const key = workspaceKey(import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCKS === 'true')
 function savedWorkspace(): { draft: QuestionDraft; chatId?: string; request?: MockCreateChatRequest } {
@@ -20,8 +21,9 @@ function savedWorkspace(): { draft: QuestionDraft; chatId?: string; request?: Mo
   if (!raw || typeof raw !== 'object') return { draft: emptyDraft() }
   const d = raw.draft as QuestionDraft | undefined
   if (!d || typeof d.question !== 'string' || typeof d.code !== 'string' || !['FREE', 'CONCEPT', 'DEBUGGING', 'PROBLEM_SOLVING', 'DESIGN'].includes(d.type)) return { draft: emptyDraft() }
-  const draft = { question: d.question, code: d.code, type: d.type }
   const request = raw.request as MockCreateChatRequest | undefined
+  const committed = (typeof raw.chatId === 'string' && !!raw.chatId) || (request && typeof request.clientRequestId === 'string')
+  const draft = { question: d.question, code: d.code, type: committed ? d.type : newQuestionType(d.type) }
   return { draft, ...(typeof raw.chatId === 'string' && raw.chatId ? { chatId: raw.chatId } : {}),
     ...(request && typeof request.clientRequestId === 'string' ? { request: { ...draft, clientRequestId: request.clientRequestId } } : {}) }
 }
@@ -85,7 +87,7 @@ export function useQuestionFlow() {
   }, [initial])
   function submit(value: QuestionDraft = draft) {
     if (submitted.current) return
-    const safe = redactValue(value)
+    const safe = redactValue({ ...value, type: newQuestionType(value.type) })
     if (safe.redacted) { notifyRedaction(); setDraft(safe.value) }
     const error = validateQuestion(value) ?? validateQuestion(safe.value)
     setValidation(error ?? '')
@@ -107,7 +109,7 @@ export function useQuestionFlow() {
     setFlow({ stage: 'editing' })
   }
   return { draft, flow, validation, submit, reset,
-    updateDraft: (next: QuestionDraft) => { if (!submitted.current) { writeSession(key, { draft: next }); setDraft(next); setValidation('') } },
+    updateDraft: (next: QuestionDraft) => { if (!submitted.current) { const draft = { ...next, type: newQuestionType(next.type) }; writeSession(key, { draft }); setDraft(draft); setValidation('') } },
     retry: () => { if (flow.stage === 'error') void run(flow.request); else if (flow.stage === 'restore-error' && initial.chatId) void restore(initial.chatId) },
   }
 }

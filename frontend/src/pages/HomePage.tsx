@@ -9,6 +9,7 @@ import { ThoughtFlow } from '../components/chat/ThoughtFlow'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { useQuestionFlow } from '../hooks/useQuestionFlow'
+import { defaultQuestionType } from '../data/questionTypes'
 import { exampleQuestions } from '../data/newChat'
 
 export function HomePage() {
@@ -24,7 +25,7 @@ export function HomePage() {
       {flow.stage === 'restoring' || flow.stage === 'restore-error' ? <div className="m-auto p-6">{flow.stage === 'restoring' ? <p role="status">저장된 대화 상태를 확인하고 있어요…</p> : <div role="alert"><p>{flow.message}</p><Button onClick={retry}>다시 불러오기</Button></div>}</div> : flow.stage === 'locked' ? <ThoughtFlow key={flow.chat.id} chat={flow.chat} restoredReceipt={flow.receipt} restoredBasic={flow.basicLearning} /> : <>
         {flow.stage === 'editing' ? <Welcome onSelect={question => {
           const example = exampleQuestions.find(item => item.question === question)
-          submit({ question, code: '', type: example?.type ?? 'FREE' })
+          submit({ question, code: '', type: example?.type ?? defaultQuestionType })
         }} /> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4" aria-busy={flow.stage === 'creating'}>
           <div className="mx-auto flex w-full max-w-content flex-col gap-5">
             <QuestionBubble key={revision} draft={draft} />

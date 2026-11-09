@@ -14,9 +14,13 @@ export function FindingCard({ finding }: { finding: Finding }) {
         근거와 확인 방법 {open ? '접기' : '보기'}<Icon name={open ? 'evidenceUp' : 'evidenceDown'} />
       </button>
     </div>
-    {finding.category === 'UNDETERMINED' ? <p className="mt-2 rounded-lg bg-hold-surface px-3 py-2 text-body">{finding.question}</p> : <div className="mt-2 grid grid-cols-2 gap-2">
-      <div className="rounded-lg bg-me-surface px-3 py-2"><p className="text-caption text-muted">내 생각</p><p className={`mt-1 whitespace-pre-wrap text-body break-words ${'userQuote' in finding ? '' : 'text-muted'}`}>{'userQuote' in finding ? finding.userQuote : '내 생각에는 없던 부분이에요'}</p></div>
-      <div className="rounded-lg bg-ai-surface px-3 py-2"><p className="text-caption text-muted">AI</p><p className={`mt-1 whitespace-pre-wrap text-body break-words ${'aiPerspective' in finding ? '' : 'text-muted'}`}>{'aiPerspective' in finding ? finding.aiPerspective : 'AI 참고 관점에는 없던 부분이에요'}</p></div>
+    {finding.category === 'UNDETERMINED' ? <p className="mt-2 rounded-lg bg-hold-surface px-3 py-2 text-body">{finding.question}</p> : finding.category === 'COMPLEMENT' ? <div aria-label="AI 근거" className="mt-2 flex min-h-[46px] items-center gap-2.5 rounded-[10px] bg-ai-surface px-3.5 py-3">
+      <span className="shrink-0 text-caption font-medium leading-4 text-muted">AI</span><p className="min-w-0 flex-1 whitespace-pre-wrap text-body break-words">{finding.aiPerspective}</p>
+    </div> : finding.category === 'UNIQUE' ? <div aria-label="내 생각 근거" className="mt-2 flex min-h-[46px] items-center gap-2.5 rounded-[10px] bg-me-surface px-3.5 py-3">
+      <span className="shrink-0 text-caption font-medium leading-4 text-muted">내 생각</span><p className="min-w-0 flex-1 whitespace-pre-wrap text-body break-words">{finding.userQuote}</p>
+    </div> : <div className="mt-2 grid grid-cols-2 gap-2">
+      <div className="rounded-lg bg-me-surface px-3 py-2"><p className="text-caption text-muted">내 생각</p><p className="mt-1 whitespace-pre-wrap text-body break-words">{finding.userQuote}</p></div>
+      <div className="rounded-lg bg-ai-surface px-3 py-2"><p className="text-caption text-muted">AI</p><p className="mt-1 whitespace-pre-wrap text-body break-words">{finding.aiPerspective}</p></div>
     </div>}
     {open && <div id={detailId} className="mt-3 border-t border-line pt-3">
       <p className="text-caption text-muted">왜 이렇게 분류했나요?</p><p className="mt-1 whitespace-pre-wrap text-body break-words">{finding.reason}</p>

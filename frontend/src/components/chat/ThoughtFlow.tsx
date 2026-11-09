@@ -26,10 +26,6 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
     if (completedResultId) conversation.current?.scrollTo({ top: 0 })
     else if (thought.phase !== 'writing') conversation.current?.scrollTo({ top: conversation.current.scrollHeight })
   }, [thought.phase, completedResultId])
-  function insert(text: string) {
-    thought.insert(text)
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
-  }
   function selectChoice(index: number) {
     thought.selectChoice(index)
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
@@ -40,8 +36,8 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">
         <QuestionBubble draft={chat} />
         {chat.classification?.source === 'MOCK_AUTO' && <p role="status" className="text-caption text-secondary">Mock 자동 분류: {questionTypeLabel(chat.type)}</p>}
-        {chat.classification?.source === 'FALLBACK' && <p role="status" className="text-caption text-secondary">유형을 분류하지 못해 자유롭게로 진행해요.</p>}
-        {thought.phase === 'writing' ? <LockedAnswer hints={hints} chat={chat} selectedChoice={thought.selectedChoice} onChoice={selectChoice} onInsert={insert} /> : <>
+        {chat.classification?.source === 'FALLBACK' && <p role="status" className="text-caption text-secondary">유형을 분류하지 못해 기본 관점으로 진행해요.</p>}
+        {thought.phase === 'writing' ? <LockedAnswer hints={hints} chat={chat} selectedChoice={thought.selectedChoice} onChoice={selectChoice} /> : <>
           <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{thought.receipt?.thought ?? thought.draft}</p></section></div>
           {thought.phase !== 'pending' && <section aria-label="생각 제출 상태" aria-busy={thought.phase === 'submitting'}>
             <p className="text-caption text-secondary">Deveil</p>
