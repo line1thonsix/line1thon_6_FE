@@ -24,11 +24,11 @@ export function HintPanel({ hints, onReturn }: { hints: ReturnType<typeof useHin
       {hints.error && <div role="alert" className="mt-2 text-body text-danger"><p>{hints.error}</p><Button className="mt-1 underline" disabled={hints.busy} onClick={hints.retry}>힌트 다시 확인하기</Button></div>}
       {current?.level === 2 && <div className="mt-2 flex items-center justify-between gap-3 border-t border-brand-soft pt-2">
         <p className="text-body text-secondary">그래도 잘 모르겠다면 기초 학습으로 이어서 설명해 드릴게요.</p>
-        {eligible && !hints.uncertain && <Button className="shrink-0 gap-2 text-caption text-brand-deep" disabled={hints.busy} onClick={hints.transition}>기초부터 설명해 주세요<span className="flex size-7 items-center justify-center rounded-full bg-basic-surface"><Icon name="basicNext" /></span></Button>}
+        <Button variant="plain" aria-label="기초부터 설명해 주세요" className="size-7 shrink-0 rounded-full bg-basic-surface disabled:opacity-50" disabled={hints.busy || hints.uncertain || !eligible} onClick={hints.transition}><Icon name="basicNext" /></Button>
       </div>}
     </div>
     {!!hints.state?.level && <fieldset className="px-hint-x py-1" disabled={hints.busy || hints.uncertain}>
-      <legend className="text-caption text-secondary">어디서 막혔나요? <span className="ml-2 text-micro text-muted">{hints.busy ? '저장 중…' : '힌트에는 선택사항 · 기초 학습 전환에는 필요해요'}</span></legend>
+      <legend className="text-caption text-secondary">어디서 막혔나요? {hints.busy && <span className="ml-2 text-micro text-muted">저장 중…</span>}</legend>
       <div className="flex flex-wrap gap-2.5">
         {points.map(point => {
           const selected = hints.state?.stuckPoint === point.value

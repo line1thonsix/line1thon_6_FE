@@ -8,11 +8,12 @@ import { displayedHint, readViewedHint } from '../src/api/hintNavigation.ts'
 import { createChatHandlers } from '../src/mocks/handlers.ts'
 import { setupServer } from 'msw/node'
 
-let vite, PostResultNotesView, HintPanel
+let vite, PostResultNotesView, HintPanel, BasicLearningResult
 before(async () => {
   vite = await createServer({ logLevel: 'silent', server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] } })
   ;({ PostResultNotesView } = await vite.ssrLoadModule('/src/components/chat/PostResultNotes.tsx'))
   ;({ HintPanel } = await vite.ssrLoadModule('/src/components/chat/HintPanel.tsx'))
+  ;({ BasicLearningResult } = await vite.ssrLoadModule('/src/components/chat/BasicLearningResult.tsx'))
 })
 after(async () => { await vite?.close() })
 function demo(allowFeedback = true) {
@@ -89,6 +90,7 @@ test('Figma initial/writing/done states render sky input, selected action and sa
   let html = renderNotes(c.getState())
   assert.ok(html.includes('배운 점 한 줄 남기기'))
   assert.ok(html.includes('의견 남기기'))
+  assert.doesNotMatch(html, /시연용|이 탭에만 저장/u)
   assert.equal(html.includes('<textarea'), false)
   c.open('reflection'); html = renderNotes(c.getState())
   assert.ok(html.includes('새롭게 알게 된 점이나 다음에 확인할 것을 한 줄로 남겨 주세요.'))
@@ -150,4 +152,33 @@ test('MSW hint reveal and basic-learning prerequisites remain server-owned after
     assert.equal((await fetch(origin + path + '/analysis')).status, 403)
     assert.equal((await post(path + '/basic-learning', { clientRequestId: 'eligible' })).status, 202)
   } finally { server.close() }
+})
+
+
+test('BASIC route restores the completed read-only composer without a submit control or extra learning badge', () => {
+  const chat = { id: 'basic-chat', status: 'LOCKED', question: '값은 언제 준비될까요?', code: '', type: 'DEBUGGING' }
+  const transition = { chatId: chat.id, transitionId: 'transition', learningPath: 'BASIC', status: 'AWAITING_CONTENT', excludeFromGrowth: true }
+  const html = renderToStaticMarkup(createElement(BasicLearningResult, { chat, transition, draft: '보존할 초안' }))
+  const textarea = html.match(/<textarea\b[^>]*>[\s\S]*?<\/textarea>/u)?.[0] ?? ''
+  assert.ok(textarea.includes('다른 주제의 질문은 새 채팅에서 던져 보세요.'))
+  assert.match(textarea, /readonly/iu)
+  assert.equal(html.includes('type="submit"'), false)
+  assert.equal((html.match(/<button\b[^>]*disabled/gu) ?? []).length, 3)
+  assert.doesNotMatch(html, /도움받아 학습|시연용|이 탭에만 저장/u)
+  assert.ok(html.includes('보존할 초안'))
+})
+
+test('hint 2 keeps difficulty confirmation and a guarded icon-only BASIC action for every prerequisite', () => {
+  const state = { chatId: 'chat', level: 2, stuckPoint: 'FLOW', stillDifficult: true, hints: [{ level: 1, text: '첫 단서' }, { level: 2, text: '두 번째 단서' }] }
+  for (const change of [{}, { stuckPoint: null }, { stillDifficult: false }]) {
+    const next = { ...state, ...change }
+    const html = renderToStaticMarkup(createElement(HintPanel, { hints: { state: next, currentHint: next.hints[1], busy: false, uncertain: false }, onReturn() {} }))
+    assert.ok(html.includes('type="checkbox"'))
+    assert.ok(html.includes('다시 생각해 봤지만 아직 어려워요'))
+    const action = html.match(/<button\b[^>]*aria-label="기초부터 설명해 주세요"[^>]*>[\s\S]*?<\/button>/u)?.[0] ?? ''
+    assert.ok(action.includes('<img'))
+    assert.equal(/\sdisabled(?:=|\s|>)/u.test(action), !next.stuckPoint || !next.stillDifficult)
+    assert.equal(action.includes('>기초부터 설명해 주세요<'), false)
+    assert.equal(html.includes('힌트에는 선택사항'), false)
+  }
 })

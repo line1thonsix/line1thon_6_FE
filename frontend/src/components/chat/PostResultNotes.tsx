@@ -18,12 +18,11 @@ export function PostResultNotesView({ state, allowFeedback = true, onOpen, onCha
   const savedKey = last ? `${last}:${state.saved[last]}` : ''
   useEffect(() => { if (active) input.current?.focus() }, [active])
   useEffect(() => { if (savedKey) end.current?.scrollIntoView({ block: 'nearest' }) }, [savedKey])
-  return <section aria-label="배운 점과 의견 시연" className="flex flex-col gap-3.5">
+  return <section aria-label="배운 점과 의견" className="flex flex-col gap-3.5">
     <div className="flex flex-wrap items-center gap-1.5">
       {noteKinds.filter(kind => allowFeedback || kind === 'reflection').map(kind => <Button key={kind} variant="plain" aria-pressed={active === kind} className={`gap-1 rounded-full border px-3 py-1.5 text-caption ${active === kind ? 'border-demo-sky-line bg-demo-sky-soft pl-2.5 text-demo-sky-ink' : 'border-line bg-page text-secondary'}`} onClick={() => { if (!composing.current) onOpen(kind) }}>
         {active === kind && <Icon name="demoCheck" />}{noteConfig[kind].label}
       </Button>)}
-      <span className="ml-auto text-micro text-muted">시연용 · 이 탭에만 저장돼요</span>
     </div>
     {active && <form aria-label={`${noteConfig[active].field} 작성`} onSubmit={event => { event.preventDefault(); if (!composing.current) onSubmit() }} className="flex items-center gap-2.5 rounded-full border border-demo-sky-line bg-demo-sky-soft py-1.5 pr-1.5 pl-5">
       <Textarea ref={input} appearance="inline" rows={1} aria-label={noteConfig[active].field} aria-invalid={!!state.error} aria-describedby={state.error ? errorId : undefined} value={text} placeholder={noteConfig[active].placeholder}
@@ -34,7 +33,7 @@ export function PostResultNotesView({ state, allowFeedback = true, onOpen, onCha
     </form>}
     {state.error && <p id={errorId} role="alert" className="text-caption text-danger">{state.error}</p>}
     {state.order.filter(kind => allowFeedback || kind === 'reflection').map(kind => <div key={kind} className="flex flex-col gap-3.5" aria-label={kind === 'reflection' ? '저장한 배운 점' : '전송한 의견'}>
-      <div className="flex justify-end"><p className="w-question-bubble max-w-full whitespace-pre-wrap rounded-composer bg-sidebar px-4 py-3 text-body break-words">{state.saved[kind]}</p></div>
+      <div className="flex justify-end"><p className="w-question-bubble max-w-full whitespace-pre-wrap rounded-composer bg-sidebar px-4 py-3 text-body-lg break-words">{state.saved[kind]}</p></div>
       <div role="status" className="flex flex-col gap-1.5"><p className="text-caption font-medium text-secondary">Deveil</p><p className="text-body-lg">{noteConfig[kind].complete}</p></div>
     </div>)}
     <div ref={end} />
