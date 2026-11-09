@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Textarea } from '../ui/Input'
@@ -7,16 +7,21 @@ import { QuestionTypeSelect } from './QuestionTypeSelect'
 import { CodeEditor } from './CodeEditor'
 import { QUESTION_MAX_LENGTH } from '../../api/chatValidation'
 import { thoughtMetrics, validateThought } from '../../api/thoughtValidation'
+import type { ThoughtEdit } from '../../api/thoughtDraft'
 import type { ThoughtPhase } from '../../types/thought'
 import type { QuestionDraft } from '../../types/chat'
 
 type Props = {
   draft: QuestionDraft; onChange: (value: QuestionDraft) => void; onSubmit: () => void;
   mode: 'editing' | 'creating' | 'error' | 'locked'; validation: string;
-  thought: string; onThoughtChange: (value: string) => void;
+  thought: string; onThoughtChange: (value: string, edit?: ThoughtEdit) => void;
   thoughtBlocked?: boolean; thoughtPhase?: ThoughtPhase; thoughtFeedback?: string; thoughtActionLabel?: string; onThoughtSubmit?: () => void; onThoughtBlur?: () => void;
 }
 export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, thought, onThoughtChange, thoughtPhase = 'writing', thoughtBlocked = false, thoughtFeedback = '', thoughtActionLabel = '분석 대기 중', onThoughtSubmit, onThoughtBlur }: Props) {
+  const beforeThoughtEdit = useRef<ThoughtEdit | null>(null)
+  function rememberThoughtEdit(input: HTMLTextAreaElement) {
+    if (thoughtEditable) beforeThoughtEdit.current = { before: input.value, start: input.selectionStart, end: input.selectionEnd }
+  }
   const [codeOpen, setCodeOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const editing = mode === 'editing'
@@ -31,9 +36,18 @@ export function QuestionComposer({ draft, onChange, onSubmit, mode, validation, 
     <Card className={`rounded-composer border-line-strong p-4 ${expanded && editing ? 'absolute bottom-composer-footer left-1/2 z-10 w-[calc(100%-48px)] max-w-composer-expanded -translate-x-1/2' : 'w-full max-w-content'}`}>
       <form onSubmit={event => { event.preventDefault(); if (editing) onSubmit(); else if (thoughtEditable) onThoughtSubmit?.() }} className="flex flex-col gap-3">
         <Textarea aria-label={locked ? '내 생각' : '질문'} aria-invalid={locked ? thoughtEditable && !!thoughtFeedback : editing && (!!validation || invalid)} aria-describedby={locked && thoughtEditable && thoughtFeedback ? 'thought-validation' : validation ? 'question-validation' : undefined} placeholder={locked ? '생각을 30자 이상 남기면 AI 답변을 열어 볼 수 있어요. 막히면 힌트로 시작하세요.' : '막힌 질문이나 궁금한 점을 적어 보세요'}
-          value={locked ? thoughtPhase === 'pending' ? '' : thought : editing ? draft.question : ''} disabled={!editing && !thoughtEditable} onBlur={thoughtEditable ? onThoughtBlur : undefined}
-          onChange={event => locked ? onThoughtChange(event.target.value) : onChange({ ...draft, question: event.target.value })}
-          onKeyDown={event => { if ((editing || thoughtEditable) && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (editing) onSubmit(); else onThoughtSubmit?.() } }}
+          value={locked ? thoughtPhase === 'pending' ? '' : thought : editing ? draft.question : ''} disabled={!editing && !thoughtEditable} onBlur={thoughtEditable ? event => {
+            // Let a choice click finish before validation can shift its position.
+            if (!(event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-thought-choice]'))) onThoughtBlur?.()
+          } : undefined}
+          onBeforeInput={event => rememberThoughtEdit(event.currentTarget)} onPaste={event => rememberThoughtEdit(event.currentTarget)} onCut={event => rememberThoughtEdit(event.currentTarget)}
+          onChange={event => {
+            const edit = beforeThoughtEdit.current ?? undefined
+            beforeThoughtEdit.current = null
+            if (locked) onThoughtChange(event.target.value, edit)
+            else onChange({ ...draft, question: event.target.value })
+          }}
+          onKeyDown={event => { rememberThoughtEdit(event.currentTarget); if ((editing || thoughtEditable) && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (editing) onSubmit(); else onThoughtSubmit?.() } }}
           className={`${expanded && editing ? 'h-[38px]' : 'h-draft'} resize-none rounded-none border-0 px-0.5 py-1 disabled:text-muted focus-visible:outline-2 focus-visible:outline-offset-2`} />
         {editing && codeOpen && <CodeEditor value={draft.code} expanded={expanded} onChange={code => onChange({ ...draft, code })} onToggle={() => setExpanded(v => !v)} />}
         <div className="flex items-center justify-between gap-3">

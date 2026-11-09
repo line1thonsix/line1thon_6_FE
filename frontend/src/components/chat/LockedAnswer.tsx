@@ -5,8 +5,8 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import type { LockedChat } from '../../types/chat'
 
-type Props = { chat: LockedChat; thought: string; onInsert: (text: string) => void; hints: ReturnType<typeof useHints> }
-export function LockedAnswer({ chat, thought, onInsert, hints }: Props) {
+type Props = { chat: LockedChat; selectedChoice: number | null; onChoice: (index: number) => void; onInsert: (text: string) => void; hints: ReturnType<typeof useHints> }
+export function LockedAnswer({ chat, selectedChoice, onChoice, onInsert, hints }: Props) {
   const tab = hints.tab
   function returnToThought() {
     hints.select('choices')
@@ -27,7 +27,7 @@ export function LockedAnswer({ chat, thought, onInsert, hints }: Props) {
 
     </div>
     <div role="tabpanel" id="help-panel" aria-labelledby={`tab-${tab}`}>
-      {tab === 'hints' ? <HintPanel hints={hints} onReturn={returnToThought} /> : tab === 'choices' ? <div className="flex flex-wrap gap-2">{chat.choices.map(choice => <Button key={choice} variant="soft" aria-pressed={thought.includes(choice)} className={`rounded-full border px-3.5 py-2 text-body text-ink ${thought.includes(choice) ? 'border-brand' : 'border-transparent'}`} onClick={() => onInsert(`${choice}부터 볼게요. 이유는 `)}>{thought.includes(choice) && <Icon name="checkChoice" />}{choice}</Button>)}</div> : <div className="flex items-center gap-3 rounded-full bg-ai-surface py-1.5 pr-1.5 pl-5"><p className="flex-1 text-body">{chat.exampleSentence}</p><Button variant="outline" className="shrink-0 gap-1 rounded-full py-[5px] pr-3.5 pl-2.5 text-body text-brand-deep" onClick={() => onInsert(chat.exampleSentence)}><Icon name="plusExample" />추가</Button></div>}
+      {tab === 'hints' ? <HintPanel hints={hints} onReturn={returnToThought} /> : tab === 'choices' ? <div className="flex flex-wrap gap-2">{chat.choices.map((choice, index) => <Button key={choice} data-thought-choice variant="soft" aria-pressed={selectedChoice === index} className={`rounded-full border px-3.5 py-2 text-body text-ink ${selectedChoice === index ? 'border-brand' : 'border-transparent'}`} onClick={() => onChoice(index)}>{selectedChoice === index && <Icon name="checkChoice" />}{choice}</Button>)}</div> : <div className="flex items-center gap-3 rounded-full bg-ai-surface py-1.5 pr-1.5 pl-5"><p className="flex-1 text-body">{chat.exampleSentence}</p><Button variant="outline" className="shrink-0 gap-1 rounded-full py-[5px] pr-3.5 pl-2.5 text-body text-brand-deep" onClick={() => onInsert(chat.exampleSentence)}><Icon name="plusExample" />추가</Button></div>}
     </div>
   </section>
 }
