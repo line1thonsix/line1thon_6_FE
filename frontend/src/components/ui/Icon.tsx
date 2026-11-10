@@ -1,3 +1,5 @@
+import historyMore from '../../assets/icons/history-more.svg'
+import historyMoreHover from '../../assets/icons/history-more-hover.svg'
 import demoCheck from '../../assets/icons/demo-check.svg'
 import demoSend from '../../assets/icons/demo-send.svg'
 import demoSendDisabled from '../../assets/icons/demo-send-disabled.svg'
@@ -29,7 +31,7 @@ import plus from '../../assets/icons/plus.svg'
 import chevron from '../../assets/icons/chevron.svg'
 import send from '../../assets/icons/send.svg'
 
-const icons = { demoCheck, demoSend, demoSendDisabled, basicNext, hintNext, hintSteps, hintCheck, evidenceDown, evidenceUp, checkChoice, more, newChat, history, info, sidebar, plus, chevron, send, check, chevronUp, code, expand, sendActive, collapse, codeChevron, lock, plusDisabled, chevronDisabled, retry, plusExample }
+const icons = { historyMore, historyMoreHover, demoCheck, demoSend, demoSendDisabled, basicNext, hintNext, hintSteps, hintCheck, evidenceDown, evidenceUp, checkChoice, more, newChat, history, info, sidebar, plus, chevron, send, check, chevronUp, code, expand, sendActive, collapse, codeChevron, lock, plusDisabled, chevronDisabled, retry, plusExample }
 export type IconName = keyof typeof icons
 export function Icon({ name }: { name: IconName }) {
   return <img src={icons[name]} alt="" aria-hidden="true" className="block shrink-0" />

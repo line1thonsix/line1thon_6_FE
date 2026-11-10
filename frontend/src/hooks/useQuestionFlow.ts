@@ -33,6 +33,7 @@ export function useQuestionFlow() {
   const [flow, setFlow] = useState<Flow>(initial.chatId || initial.request ? { stage: 'restoring' } : { stage: 'editing' })
   const [validation, setValidation] = useState('')
   const active = useRef<AbortController | null>(null)
+  const restoreTarget = useRef(initial.chatId)
   const submitted = useRef(!!(initial.chatId || initial.request))
   const timeoutMs = 15000
   useEffect(() => () => { const controller = active.current; active.current = null; controller?.abort() }, [])
@@ -98,18 +99,30 @@ export function useQuestionFlow() {
     writeSession(key, { draft: safe.value, request })
     void run(request)
   }
+  function openChat(id: string) {
+    const controller = active.current
+    active.current = null
+    controller?.abort()
+    submitted.current = true
+    restoreTarget.current = id
+    setValidation('')
+    setDraft(emptyDraft())
+    writeSession(key, { draft: emptyDraft(), chatId: id })
+    void restore(id)
+  }
   function reset() {
     const controller = active.current
     active.current = null
     controller?.abort()
     submitted.current = false
+    restoreTarget.current = undefined
     writeSession(key, null)
     setDraft(emptyDraft())
     setValidation('')
     setFlow({ stage: 'editing' })
   }
-  return { draft, flow, validation, submit, reset,
+  return { draft, flow, validation, submit, reset, openChat,
     updateDraft: (next: QuestionDraft) => { if (!submitted.current) { const draft = { ...next, type: newQuestionType(next.type) }; writeSession(key, { draft }); setDraft(draft); setValidation('') } },
-    retry: () => { if (flow.stage === 'error') void run(flow.request); else if (flow.stage === 'restore-error' && initial.chatId) void restore(initial.chatId) },
+    retry: () => { if (flow.stage === 'error') void run(flow.request); else if (flow.stage === 'restore-error' && restoreTarget.current) void restore(restoreTarget.current) },
   }
 }
