@@ -31,6 +31,7 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
   }
   if (basicLearning) return <BasicLearningResult chat={chat} transition={basicLearning} draft={thought.draft} />
+  if (analysis.completion && thought.receipt) return <ComparisonResult completion={analysis.completion} thought={thought.receipt.thought} chat={chat} />
   return <>
     <div ref={conversation} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">
@@ -45,9 +46,7 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
 
             {thought.phase === 'failed' && <div role="alert"><p className="mt-2 text-body text-secondary">{thought.feedback}</p><Button className="mt-2 gap-1.5 text-body text-danger" onClick={thought.retry}>다시 제출해 볼게요<Icon name="retry" /></Button></div>}
           </section>}
-          {thought.phase === 'pending' && thought.receipt && (analysis.completion
-            ? <ComparisonResult completion={analysis.completion} thought={thought.receipt.thought} />
-            : <AnalysisStatus analysis={analysis} />)}
+          {thought.phase === 'pending' && thought.receipt && <AnalysisStatus analysis={analysis} />}
         </>}
       </div>
     </div>

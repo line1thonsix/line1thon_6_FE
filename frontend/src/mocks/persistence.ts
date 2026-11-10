@@ -1,5 +1,6 @@
 // Development-only stand-in for server persistence. No real API uses this storage.
-// Results/answers are deliberately not persisted; they are served behind the Mock lock.
+// Initial results/answers are not persisted. Follow-up pairs persist only after
+// the Mock release guard, and their read endpoint applies the same guard.
 export type MockPersistence = { read(key: string): unknown; write(key: string, value: unknown): void }
 export function persistentMap<K, V>(name: string, storage?: MockPersistence): Map<K, V> {
   class PersistedMap extends Map<K, V> {

@@ -5,6 +5,9 @@ import type { ComparisonResult as Result } from '../../types/comparison'
 import type { AnalysisCompletion } from '../../types/analysis'
 import { comparisonDisclaimer } from '../../data/comparison'
 import { useComparisonResult } from '../../hooks/useComparisonResult'
+import { ResultConversation } from './ResultConversation'
+import { QuestionBubble } from './QuestionBubble'
+import type { LockedChat } from '../../types/chat'
 
 export function ComparisonContent({ result }: { result: Result }) {
   return <section aria-label="관점 비교 결과" className="flex flex-col gap-3">
@@ -20,11 +23,14 @@ export function ComparisonContent({ result }: { result: Result }) {
   </section>
 }
 
-export function ComparisonResult({ completion, thought }: { completion: AnalysisCompletion; thought: string }) {
+export function ComparisonResult({ completion, thought, chat }: { completion: AnalysisCompletion; thought: string; chat: LockedChat }) {
   const { state, reload } = useComparisonResult(completion, thought)
-  return <div className="flex flex-col gap-3"><p className="text-caption text-secondary">Deveil</p>
+  return <ResultConversation chat={chat} ready={state.status === 'ready'}>
+    <QuestionBubble draft={chat} />
+    <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{thought}</p></section></div>
+    <div className="flex flex-col gap-3"><p className="text-caption text-secondary">Deveil</p>
     {state.status === 'loading' && <p role="status" className="text-body-lg text-muted">비교 결과를 불러오고 있어요…</p>}
     {state.status === 'error' && <div role="alert"><p className="text-body text-secondary">{state.message}</p><Button className="mt-2 text-body text-brand underline" onClick={reload}>결과 다시 불러오기</Button></div>}
     {state.status === 'ready' && <ComparisonContent key={state.result.resultId} result={state.result} />}
-  </div>
+  </div></ResultConversation>
 }

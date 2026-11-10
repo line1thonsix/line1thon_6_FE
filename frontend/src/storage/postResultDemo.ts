@@ -21,7 +21,7 @@ const safeText = (value: unknown) => {
 }
 export function validateDemoNote(kind: NoteKind, text: string): string | null {
   if (!text.trim()) return `${noteConfig[kind].field}을 한 줄 적어 주세요.`
-  if (text.trim().length > noteConfig[kind].max) return `${noteConfig[kind].field}은 ${noteConfig[kind].max.toLocaleString('ko-KR')}자까지 적을 수 있어요.`
+  if ((kind === 'feedback' ? text.length : text.trim().length) > noteConfig[kind].max) return `${noteConfig[kind].field}은 ${noteConfig[kind].max.toLocaleString('ko-KR')}자까지 적을 수 있어요.`
   return null
 }
 export function readDemoNotes(raw: unknown): DemoNotesState {
@@ -72,8 +72,9 @@ export function createDemoNotes(chatId: string, allowFeedback = true, storage: D
     submit() {
       const kind = state.active
       if (!kind || (!allowFeedback && kind === 'feedback')) return false
-      const text = safeText(state.drafts[kind]).trim()
-      const error = validateDemoNote(kind, text)
+      const raw = safeText(state.drafts[kind])
+      const text = raw.trim()
+      const error = validateDemoNote(kind, raw)
       if (error) { publish({ ...state, error }); return false }
       const saved = persist({ ...state, active: null, drafts: { ...state.drafts, [kind]: text }, saved: { ...state.saved, [kind]: text }, savedAt: { ...state.savedAt, [kind]: Date.now() }, order: [...state.order.filter(item => item !== kind), kind], error: '' }, true)
       if (saved && kind === 'reflection') announceHistoryChange()

@@ -30,14 +30,19 @@ import { readComparisonResult } from '../api/comparisonResult.ts'
 import type { ComparisonResult } from '../types/comparison.ts'
 import { getPreparation } from './chatFixtures.ts'
 import type { ConversationSummary } from '../types/history.ts'
+import { createFollowUpStore, buildFollowUpFixture, FollowUpError } from './followUpStore.ts'
+import { createMockQuestionUsage } from './questionUsage.ts'
 
 type BasicResultScenario = 'success' | 'error-once' | 'error' | 'slow' | 'empty' | 'invalid'
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { historyScenario?: () => Scenario; classificationScenario?: () => ClassificationScenario; basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
+type Options = { followUpScenario?: () => Scenario; followUpDelayMs?: number; historyScenario?: () => Scenario; classificationScenario?: () => ClassificationScenario; basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
 export function createChatHandlers(options: Options = {}) {
+  const followUps = createFollowUpStore(options.persistence)
+  const consumeQuestion = createMockQuestionUsage(options.persistence)
+  const basicPublished = persistentMap<string, string>('basicPublished', options.persistence)
   const path = options.origin ? new URL(MOCK_CHATS_PATH, options.origin).href : MOCK_CHATS_PATH
   const requests = persistentMap<string, Entry>('requests', options.persistence)
   const chats = persistentMap<string, LockedChat>('chats', options.persistence)
@@ -69,7 +74,46 @@ export function createChatHandlers(options: Options = {}) {
     },
   })
   const thoughtAttempts = persistentMap<string, number>('thoughtAttempts', options.persistence)
+  const publicContext = (chatId: string) => {
+    const chat = chats.get(chatId)
+    if (!chat) throw new FollowUpError('NOT_FOUND', 404)
+    const transition = basicLearning.get(chatId)
+    if (transition && hints.get(chatId)?.level === 2 && basicPublished.get(chatId) === transition.transitionId) {
+      return { question: chat.question, code: chat.code, thought: null, referenceAnswer: buildBasicLearningFixture(chat, transition, basicResults.get(chatId)!.resultId).referenceAnswer }
+    }
+    const analysis = analyses.get(chatId)
+    const thought = thoughts.get(chatId)
+    if (!transition && analysis?.status === 'DONE' && thought) {
+      const result = readComparisonResult(makeResult(chat, thought.thought, analysis.jobId, analysis.resultId), thought.thought)
+      return { question: chat.question, code: chat.code, thought: thought.thought, referenceAnswer: result.referenceAnswer }
+    }
+    throw new FollowUpError('LOCKED', 403)
+  }
+  const followUpFailure = (error: unknown) => HttpResponse.json({ code: error instanceof FollowUpError ? error.code : 'FOLLOW_UP_UNAVAILABLE' }, { status: error instanceof FollowUpError ? error.status : 503 })
   return [
+    http.get(`${path}/:chatId/follow-ups`, ({ params }) => {
+      try { const chatId = String(params.chatId); publicContext(chatId); return HttpResponse.json(followUps.snapshot(chatId)) }
+      catch (error) { return followUpFailure(error) }
+    }),
+    http.post(`${path}/:chatId/follow-ups`, async ({ params, request }) => {
+      try {
+        const chatId = String(params.chatId)
+        publicContext(chatId)
+        let raw: unknown
+        try { raw = await request.json() } catch { throw new FollowUpError('INVALID_REQUEST', 400) }
+        const body = raw as Record<string, unknown> | null
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2 || typeof body.question !== 'string' || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) throw new FollowUpError('INVALID_REQUEST', 400)
+        const snapshot = await followUps.submit(chatId, { question: body.question, clientRequestId: body.clientRequestId }, async (attempt, previous) => {
+          const scenario = options.followUpScenario?.() ?? 'success'
+          await delay(options.followUpDelayMs ?? options.delayMs ?? (scenario === 'slow' ? 5000 : 900))
+          if (scenario === 'error' || scenario === 'error-once' && attempt === 1) throw new FollowUpError('FOLLOW_UP_UNAVAILABLE', 503)
+          return buildFollowUpFixture({ ...publicContext(chatId), previous }, body.question as string)
+        }, () => consumeQuestion(now()))
+        const metadata = historyMetadata.get(chatId)
+        if (metadata) historyMetadata.set(chatId, { ...metadata, updatedAt: Math.max(metadata.updatedAt, now()) })
+        return HttpResponse.json(snapshot)
+      } catch (error) { return followUpFailure(error) }
+    }),
     // Mock-only list contract: metadata only, never any code/thought/answer/result body.
     http.get(path, async ({ request }) => {
       const scenario = options.historyScenario?.() ?? 'success'
@@ -149,7 +193,9 @@ export function createChatHandlers(options: Options = {}) {
         if (scenario === 'empty') raw.concept = ''
         if (scenario === 'invalid') raw.steps = [] as unknown as typeof raw.steps
         // No partial answer if any required section is empty/invalid.
-        return HttpResponse.json(readBasicLearningResult(raw, chatId, transition.transitionId))
+        const verified = readBasicLearningResult(raw, chatId, transition.transitionId)
+        basicPublished.set(chatId, transition.transitionId)
+        return HttpResponse.json(verified)
       } catch { return HttpResponse.json({ code: 'BASIC_RESULT_INVALID' }, { status: 503 }) }
     }),
     http.post(`${path}/:chatId/basic-learning`, async ({ params, request }) => {
@@ -210,7 +256,11 @@ export function createChatHandlers(options: Options = {}) {
       requests.set(key, entry)
       if (entry.result) return HttpResponse.json(readLockedChat(entry.result), { status: 201 })
       if (!entry.pending || typeof entry.pending.then !== 'function') {
+        if (entry.attempts === 0) {
+          try { consumeQuestion(now()) } catch (error) { return followUpFailure(error) }
+        }
         entry.attempts += 1
+        requests.set(key, entry)
         entry.pending = (async (): Promise<Result> => {
           const scenario = options.scenario?.() ?? 'success'
           await delay(options.delayMs ?? (scenario === 'slow' ? 5000 : 1200))
@@ -343,6 +393,10 @@ export function createChatHandlers(options: Options = {}) {
 }
 
 export const handlers = createChatHandlers({
+  followUpScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('followUp')
+    return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'
+  },
   historyScenario: () => {
     const scenario = new URL(location.href).searchParams.get('history')
     return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'
