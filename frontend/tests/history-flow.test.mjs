@@ -136,7 +136,7 @@ test('BASIC history survives reload and opens only through the existing authoriz
   const f = fixture()
   try {
     const chat = await create(), path = '/api/chats/' + chat.id
-    for (const input of [{ level: 1 }, { level: 2 }, { stuckPoint: 'FLOW' }, { stillDifficult: true }]) assert.equal((await post(path + '/hints', input)).status, 200)
+    for (const input of [{ level: 1 }, { level: 2 }]) assert.equal((await post(path + '/hints', input)).status, 200)
     const transition = (await post(path + '/basic-learning', { clientRequestId: 'basic' })).body
     f.reload()
     const list = (await get()).body; noPrivateContent(list); assert.equal(list.items[0].learningPath, 'BASIC')

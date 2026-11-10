@@ -45,7 +45,7 @@ export function createChatHandlers(options: Options = {}) {
   const now = options.now ?? Date.now
   let historyAttempts = 0
   const thoughts = persistentMap<string, PendingThought>('thoughts', options.persistence)
-  const hints = persistentMap<string, { level: HintLevel; stuckPoint: StuckPoint | null; stillDifficult?: boolean }>('hints', options.persistence)
+  const hints = persistentMap<string, { level: HintLevel; stuckPoint: StuckPoint | null }>('hints', options.persistence)
   const basicLearning = persistentMap<string, BasicLearningTransition>('basicLearning', options.persistence)
   const basicRequests = persistentMap<string, string>('basicRequests', options.persistence)
   const basicAttempts = persistentMap<string, number>('basicAttempts', options.persistence)
@@ -95,7 +95,7 @@ export function createChatHandlers(options: Options = {}) {
       const chat = chats.get(String(params.chatId))
       if (!chat) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       const saved = hints.get(chat.id) ?? { level: 0 as const, stuckPoint: null }
-      return HttpResponse.json({ chatId: chat.id, ...saved, stillDifficult: saved.stillDifficult ?? false, basicLearning: basicLearning.get(chat.id) ?? null, hints: openedHints(chat, saved.level) })
+      return HttpResponse.json({ chatId: chat.id, level: saved.level, stuckPoint: saved.stuckPoint, basicLearning: basicLearning.get(chat.id) ?? null, hints: openedHints(chat, saved.level) })
     }),
     http.post(`${path}/:chatId/hints`, async ({ request, params }) => {
       const chat = chats.get(String(params.chatId))
@@ -109,7 +109,7 @@ export function createChatHandlers(options: Options = {}) {
       // Recheck after awaiting the body: thought submission may have raced this request.
       if (thoughts.has(chat.id) || basicLearning.has(chat.id)) return HttpResponse.json({ code: 'ALREADY_SUBMITTED' }, { status: 409 })
       const saved = hints.get(chat.id) ?? { level: 0 as HintLevel, stuckPoint: null as StuckPoint | null }
-      let next = { ...saved }
+      const next = { level: saved.level, stuckPoint: saved.stuckPoint }
       if (Object.keys(body).length !== 1) return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       if ('level' in body) {
         if (body.level !== 1 && body.level !== 2) return HttpResponse.json({ code: 'INVALID_LEVEL' }, { status: 400 })
@@ -120,13 +120,9 @@ export function createChatHandlers(options: Options = {}) {
         if (!stuckPoints.includes(body.stuckPoint as StuckPoint)) return HttpResponse.json({ code: 'INVALID_STUCK_POINT' }, { status: 400 })
         if (saved.level < 1) return HttpResponse.json({ code: 'HINT_ORDER_REQUIRED' }, { status: 409 })
         next.stuckPoint = body.stuckPoint as StuckPoint
-      } else if ('stillDifficult' in body) {
-        if (typeof body.stillDifficult !== 'boolean') return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
-        if (saved.level !== 2) return HttpResponse.json({ code: 'HINT_ORDER_REQUIRED' }, { status: 409 })
-        next.stillDifficult = body.stillDifficult
       } else return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       hints.set(chat.id, next)
-      return HttpResponse.json({ chatId: chat.id, ...next, stillDifficult: next.stillDifficult ?? false, basicLearning: null, hints: openedHints(chat, next.level) })
+      return HttpResponse.json({ chatId: chat.id, ...next, basicLearning: null, hints: openedHints(chat, next.level) })
     }),
     http.get(`${path}/:chatId/basic-learning/result`, async ({ params, request }) => {
       const chatId = String(params.chatId)
@@ -135,7 +131,7 @@ export function createChatHandlers(options: Options = {}) {
       const transition = basicLearning.get(chatId)
       const help = hints.get(chatId)
       // Only server-owned F-09 state grants access. Client path/status/conditions are ignored.
-      if (!transition || thoughts.has(chatId) || help?.level !== 2 || !help.stuckPoint || help.stillDifficult !== true) {
+      if (!transition || thoughts.has(chatId) || help?.level !== 2) {
         return HttpResponse.json({ code: 'BASIC_ACCESS_DENIED' }, { status: 403 })
       }
       if (new URL(request.url).searchParams.get('transitionId') !== transition.transitionId) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
@@ -174,7 +170,7 @@ export function createChatHandlers(options: Options = {}) {
       let saved = basicLearning.get(chatId)
       if (!saved) {
         const help = hints.get(chatId)
-        if (help?.level !== 2 || !help.stuckPoint || help.stillDifficult !== true) {
+        if (help?.level !== 2) {
           return HttpResponse.json({ code: 'BASIC_CONDITIONS_REQUIRED' }, { status: 409 })
         }
         // Commit synchronously before the async acknowledgement. One path wins any race.

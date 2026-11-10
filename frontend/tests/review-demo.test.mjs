@@ -118,13 +118,13 @@ test('viewing hint 1 after hint 2 never lowers revealed level, discards hint 2, 
   assert.equal(readViewedHint('2'), null)
   assert.equal(readViewedHint(1), 1)
   const hints = { state, currentHint: displayedHint(state, 1), busy: false, uncertain: false, transitionBlocked: false }
-  let html = renderToStaticMarkup(createElement(HintPanel, { hints, onReturn() {} }))
+  let html = renderToStaticMarkup(createElement(HintPanel, { hints }))
   assert.ok(html.includes('힌트를 더 볼까요?'))
   assert.equal(html.includes('두 번째 단서'), false)
-  html = renderToStaticMarkup(createElement(HintPanel, { hints: { ...hints, currentHint: displayedHint(state, 2) }, onReturn() {} }))
+  html = renderToStaticMarkup(createElement(HintPanel, { hints: { ...hints, currentHint: displayedHint(state, 2) } }))
   assert.ok(html.includes('이전 힌트 보기'))
   assert.ok(html.includes('두 번째 단서'))
-  assert.ok(html.includes('기초부터 설명해 주세요'))
+  assert.ok(html.includes('그래도 잘 모르겠다면 기초 학습으로 이어서 설명해 드릴게요.'))
 })
 
 test('MSW hint reveal and basic-learning prerequisites remain server-owned after local backward navigation and server reload', async () => {
@@ -140,15 +140,13 @@ test('MSW hint reveal and basic-learning prerequisites remain server-owned after
     await post(path + '/hints', { level: 1 })
     assert.equal((await post(path + '/basic-learning', { clientRequestId: 'too-early' })).status, 409)
     await post(path + '/hints', { level: 2 })
-    await post(path + '/hints', { stuckPoint: 'FLOW' })
-    assert.equal((await post(path + '/basic-learning', { clientRequestId: 'no-confirmation' })).status, 409)
-    await post(path + '/hints', { stillDifficult: true })
     server.resetHandlers(...createChatHandlers(options))
     const state = await (await fetch(origin + path + '/hints')).json()
     assert.equal(displayedHint(state, readViewedHint(1)).level, 1)
     assert.equal(state.level, 2)
     assert.equal(state.hints.length, 2)
-    assert.equal(state.stillDifficult, true)
+    assert.equal(state.stuckPoint, null)
+    assert.equal('stillDifficult' in state, false)
     assert.equal((await fetch(origin + path + '/analysis')).status, 403)
     assert.equal((await post(path + '/basic-learning', { clientRequestId: 'eligible' })).status, 202)
   } finally { server.close() }
@@ -168,17 +166,24 @@ test('BASIC route restores the completed read-only composer without a submit con
   assert.ok(html.includes('보존할 초안'))
 })
 
-test('hint 2 keeps difficulty confirmation and a guarded icon-only BASIC action for every prerequisite', () => {
-  const state = { chatId: 'chat', level: 2, stuckPoint: 'FLOW', stillDifficult: true, hints: [{ level: 1, text: '첫 단서' }, { level: 2, text: '두 번째 단서' }] }
-  for (const change of [{}, { stuckPoint: null }, { stillDifficult: false }]) {
+test('hint 2 makes the existing sentence/arrow one BASIC button without a checkbox or return button', () => {
+  const state = { chatId: 'chat', level: 2, stuckPoint: null, hints: [{ level: 1, text: '첫 단서' }, { level: 2, text: '두 번째 단서' }] }
+  for (const change of [{}, { stuckPoint: 'FLOW' }, { stillDifficult: false }, { level: 1 }]) {
     const next = { ...state, ...change }
-    const html = renderToStaticMarkup(createElement(HintPanel, { hints: { state: next, currentHint: next.hints[1], busy: false, uncertain: false }, onReturn() {} }))
-    assert.ok(html.includes('type="checkbox"'))
-    assert.ok(html.includes('다시 생각해 봤지만 아직 어려워요'))
-    const action = html.match(/<button\b[^>]*aria-label="기초부터 설명해 주세요"[^>]*>[\s\S]*?<\/button>/u)?.[0] ?? ''
+    const html = renderToStaticMarkup(createElement(HintPanel, { hints: { state: next, currentHint: next.hints[1], busy: false, uncertain: false } }))
+    assert.equal(html.includes('type="checkbox"'), false)
+    assert.equal(html.includes('다시 생각해 봤지만 아직 어려워요'), false)
+    assert.equal(html.includes('내 생각 적어 볼게요'), false)
+    const action = (html.match(/<button\b[^>]*>[\s\S]*?<\/button>/gu) ?? []).find(button => button.includes('그래도 잘 모르겠다면 기초 학습으로 이어서 설명해 드릴게요.')) ?? ''
     assert.ok(action.includes('<img'))
-    assert.equal(/\sdisabled(?:=|\s|>)/u.test(action), !next.stuckPoint || !next.stillDifficult)
-    assert.equal(action.includes('>기초부터 설명해 주세요<'), false)
+    assert.equal(/\sdisabled(?:=|\s|>)/u.test(action), next.level !== 2)
     assert.equal(html.includes('힌트에는 선택사항'), false)
+  }
+  const first = renderToStaticMarkup(createElement(HintPanel, { hints: { state: { ...state, level: 1, hints: state.hints.slice(0, 1) }, currentHint: state.hints[0] } }))
+  assert.equal(first.includes('그래도 잘 모르겠다면'), false)
+  for (const flags of [{ busy: true }, { uncertain: true }]) {
+    const html = renderToStaticMarkup(createElement(HintPanel, { hints: { state, currentHint: state.hints[1], ...flags } }))
+    const action = (html.match(/<button\b[^>]*>[\s\S]*?<\/button>/gu) ?? []).find(button => button.includes('그래도 잘 모르겠다면')) ?? ''
+    assert.match(action, /\sdisabled(?:=|\s|>)/u)
   }
 })

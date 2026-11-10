@@ -9,10 +9,6 @@ import type { LockedChat } from '../../types/chat'
 type Props = { chat: LockedChat; selectedChoice: number | null; onChoice: (index: number) => void; hints: ReturnType<typeof useHints> }
 export function LockedAnswer({ chat, selectedChoice, onChoice, hints }: Props) {
   const tab = hints.tab
-  function returnToThought() {
-    hints.select('choices')
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
-  }
   return <section className="flex flex-col gap-2" aria-label="잠긴 AI 답변">
     <p className="text-caption text-secondary">Deveil</p>
     <div><p className="text-body-lg">AI의 답을 보기 전에, 먼저 내 생각을 적어 볼까요?</p><p className="mt-1 text-body text-secondary">시작이 어렵다면 아래에서 하나를 골라 보세요.</p></div>
@@ -28,7 +24,7 @@ export function LockedAnswer({ chat, selectedChoice, onChoice, hints }: Props) {
 
     </div>
     <div role="tabpanel" id="help-panel" aria-labelledby={`tab-${tab}`}>
-      {tab === 'hints' ? <HintPanel hints={hints} onReturn={returnToThought} /> : <div className="flex flex-wrap gap-2">{chat.choices.map((choice, index) => <Button key={choice} data-thought-choice variant="soft" aria-pressed={selectedChoice === index} className={`rounded-full border px-3.5 py-2 text-body text-ink ${selectedChoice === index ? 'border-brand' : 'border-transparent'}`} onClick={() => onChoice(index)}>{selectedChoice === index && <Icon name="checkChoice" />}{choice}</Button>)}</div>}
+      {tab === 'hints' ? <HintPanel hints={hints} /> : <div className="flex flex-wrap gap-2">{chat.choices.map((choice, index) => <Button key={choice} data-thought-choice variant="soft" aria-pressed={selectedChoice === index} className={`rounded-full border px-3.5 py-2 text-body text-ink ${selectedChoice === index ? 'border-brand' : 'border-transparent'}`} onClick={() => onChoice(index)}>{selectedChoice === index && <Icon name="checkChoice" />}{choice}</Button>)}</div>}
     </div>
   </section>
 }

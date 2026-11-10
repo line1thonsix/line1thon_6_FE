@@ -15,7 +15,7 @@ function fixture(extra = {}) {
   const options = { origin, persistence, delayMs: 1, analysisDurationMs: 100, now: () => now, ...extra }
   const server = setupServer(...createChatHandlers(options))
   server.listen({ onUnhandledFrame: 'error' })
-  return { server, reload: () => server.resetHandlers(...createChatHandlers(options)), tick: n => { now = n } }
+  return { server, db, reload: () => server.resetHandlers(...createChatHandlers(options)), tick: n => { now = n } }
 }
 async function request(path, body) {
   const r = await fetch(origin + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -29,8 +29,6 @@ async function create() {
 async function prepare(path) {
   await request(path + '/hints', { level: 1 })
   await request(path + '/hints', { level: 2 })
-  await request(path + '/hints', { stuckPoint: 'FLOW' })
-  await request(path + '/hints', { stillDifficult: true })
 }
 const transition = (path, key = crypto.randomUUID()) => request(path + '/basic-learning', { clientRequestId: key })
 const submit = path => request(path + '/thoughts', { thought, clientRequestId: crypto.randomUUID() })
@@ -38,27 +36,22 @@ function assertPrivate(value) {
   for (const key of ['referenceAnswer', 'findings', 'explanation', 'verificationCode', 'score']) assert.equal(JSON.stringify(value).includes(key), false)
 }
 
-test('F-09 validates each prerequisite on the Mock server, ignores client claims, and allows confirmation withdrawal', async () => {
+test('F-09 requires only server-confirmed hint 2; hint 0/1 and forged claims cannot bypass it', async () => {
   const f = fixture()
   try {
     const path = await create()
     assert.equal((await transition(path)).status, 409)
-    assert.equal((await request(path + '/hints', { stillDifficult: true })).status, 409)
-    await request(path + '/hints', { level: 1 })
-    await request(path + '/hints', { stuckPoint: 'FLOW' })
-    assert.equal((await transition(path)).status, 409) // hint 2 and confirmation missing
-    await request(path + '/hints', { level: 2 })
-    assert.equal((await transition(path)).status, 409) // confirmation missing
-    await request(path + '/hints', { stillDifficult: true })
-    await request(path + '/hints', { stillDifficult: false })
-    assert.equal((await transition(path)).status, 409)
+    assert.equal((await request(path + '/hints', { level: 2 })).status, 409)
     assert.equal((await request(path + '/basic-learning', { clientRequestId: 'spoof', level: 2, stuckPoint: 'FLOW', stillDifficult: true })).status, 400)
-    assert.equal((await request(path)).body.learningPath, 'SELF')
-    const noPoint = await create()
-    await request(noPoint + '/hints', { level: 1 }); await request(noPoint + '/hints', { level: 2 })
-    await request(noPoint + '/hints', { stillDifficult: true })
-    assert.equal((await transition(noPoint)).status, 409) // selection missing
-    await request(noPoint + '/hints', { stuckPoint: 'CONCEPT' })
+    assert.equal((await request(path + '/hints', { stillDifficult: true })).status, 400)
+    await request(path + '/hints', { level: 1 })
+    assert.equal((await transition(path)).status, 409)
+    await request(path + '/hints', { stuckPoint: 'FLOW' })
+    assert.equal((await transition(path)).status, 409) // Optional selection is not a substitute for hint 2.
+    await request(path + '/hints', { level: 2 })
+    assert.equal((await transition(path)).status, 202)
+    const noPoint = await create(); await prepare(noPoint)
+    assert.equal((await request(noPoint + '/hints')).body.stuckPoint, null)
     assert.equal((await transition(noPoint)).status, 202)
   } finally { f.server.close() }
 })
@@ -68,7 +61,8 @@ test('eligible transition is idempotent under duplicate requests, new IDs and re
   try {
     const path = await create(); await prepare(path)
     const before = (await request(path + '/hints')).body
-    assert.equal(before.stillDifficult, true)
+    assert.equal(before.stuckPoint, null)
+    assert.equal('stillDifficult' in before, false)
     f.reload()
     assert.deepEqual((await request(path + '/hints')).body, before)
     const [one, two] = await Promise.all([transition(path, 'same'), transition(path, 'same')])
@@ -105,7 +99,7 @@ test('lost acknowledgement preserves committed path; refresh and retry return th
   } finally { f.server.close() }
 })
 
-test('F-08 direct return path remains SELF, accepts a thought and completes comparison even after all F-09 prerequisites', async () => {
+test('writing a thought after hint 2 remains SELF and completes comparison without a return button', async () => {
   const f = fixture()
   try {
     const path = await create(); await prepare(path)
@@ -153,8 +147,29 @@ test('invalid/cross-chat transition requests and corrupt or conflicting restored
     assert.throws(() => readRestoredChat({ ...detail, thoughtId: 'fake', thought }))
     assert.throws(() => readRestoredChat({ ...detail, basicLearning: { ...detail.basicLearning, excludeFromGrowth: false } }))
     const state = (await request(path + '/hints')).body
-    assert.throws(() => readHintState({ ...state, stillDifficult: false }, detail.id))
+    assert.deepEqual(readHintState({ ...state, stuckPoint: null, stillDifficult: false }, detail.id).basicLearning, detail.basicLearning)
     assert.throws(() => readHintState({ ...state, level: 1, hints: state.hints.slice(0, 1) }, detail.id))
     assertPrivate(readBasicLearningTransition({ ...detail.basicLearning, referenceAnswer: 'hidden', findings: [] }, detail.id))
+  } finally { f.server.close() }
+})
+
+
+test('legacy difficulty flags do not block hint-2-only transition or F-12 restoration with no selected point', async () => {
+  const f = fixture()
+  try {
+    const path = await create(); await prepare(path)
+    const id = path.split('/').at(-1)
+    const rows = JSON.parse(f.db.get('hints'))
+    rows.find(([key]) => key === id)[1].stillDifficult = false
+    f.db.set('hints', JSON.stringify(rows)); f.reload()
+    const help = readHintState((await request(path + '/hints')).body, id)
+    assert.equal(help.stuckPoint, null); assert.equal(help.level, 2)
+    assert.equal('stillDifficult' in help, false)
+    const saved = (await transition(path)).body
+    f.reload()
+    assert.deepEqual(readHintState((await request(path + '/hints')).body, id).basicLearning, saved)
+    const result = await request(path + '/basic-learning/result?transitionId=' + saved.transitionId)
+    assert.equal(result.status, 200); assert.equal(result.body.excludeFromGrowth, true)
+    assert.equal((await request(path + '/result?resultId=guess')).status, 403)
   } finally { f.server.close() }
 })
