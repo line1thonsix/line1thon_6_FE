@@ -22,6 +22,10 @@ export function createFollowUpStore(persistence?: MockPersistence) {
   }
   return {
     snapshot,
+    remove(chatId: string) {
+      conversations.delete(chatId)
+      for (const [key, value] of requests) if (value.chatId === chatId) requests.delete(key)
+    },
     async submit(chatId: string, request: FollowUpRequest, generate: (attempt: number, previous: FollowUp[]) => Promise<string>, consume: () => void) {
       const originalError = validateFollowUp(request.question)
       const question = redactSecrets(request.question).value
@@ -39,6 +43,7 @@ export function createFollowUpStore(persistence?: MockPersistence) {
       entry.attempts++; requests.set(request.clientRequestId, entry)
       const work = (async () => {
         const answer = redactSecrets(await generate(entry.attempts, snapshot(chatId).items)).value
+        if (requests.get(request.clientRequestId) !== entry) throw new FollowUpError('NOT_FOUND', 404)
         if (!answer.trim()) throw new FollowUpError('FOLLOW_UP_UNAVAILABLE', 503)
         // No original question, thought, analysis or comparison mutations.
         const items = [...snapshot(chatId).items, { id: entry.id, question, answer }]

@@ -1,4 +1,6 @@
 @theme {
+  --color-delete-line: #f3c9c4;
+  --shadow-delete-dialog: 0 10px 32px rgb(0 0 0 / 0.12);
   --color-guide-number: #334d3b;
   --color-guide-notice: #fefaf5;
   --color-guide-divider: #e3e8e3;

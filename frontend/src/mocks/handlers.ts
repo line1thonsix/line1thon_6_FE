@@ -36,11 +36,14 @@ import { createMockQuestionUsage } from './questionUsage.ts'
 
 type BasicResultScenario = 'success' | 'error-once' | 'error' | 'slow' | 'empty' | 'invalid'
 type Scenario = 'success' | 'error-once' | 'error' | 'slow'
-type Options = { cancelAckScenario?: () => Scenario; cancelAckDelayMs?: number; analysisStatusDelayMs?: number; followUpScenario?: () => Scenario; followUpDelayMs?: number; historyScenario?: () => Scenario; classificationScenario?: () => ClassificationScenario; basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
+type Options = { ownerToken?: string; deletionScenario?: () => Scenario; deletionDelayMs?: number; cancelAckScenario?: () => Scenario; cancelAckDelayMs?: number; analysisStatusDelayMs?: number; followUpScenario?: () => Scenario; followUpDelayMs?: number; historyScenario?: () => Scenario; classificationScenario?: () => ClassificationScenario; basicResultScenario?: () => BasicResultScenario; basicResultDelayMs?: number; persistence?: MockPersistence; demo?: () => boolean; scenario?: () => Scenario; delayMs?: number; origin?: string; thoughtScenario?: () => Scenario; thoughtDelayMs?: number; analysisScenario?: () => AnalysisScenario; analysisDurationMs?: number; now?: () => number; comparisonScenario?: () => ComparisonScenario; basicScenario?: () => Scenario }
 type Result = { ok: true; chat: LockedChat } | { ok: false }
 type Entry = { fingerprint: string; attempts: number; pending?: Promise<Result>; result?: LockedChat }
 
 export function createChatHandlers(options: Options = {}) {
+  const savedOwner = options.persistence?.read('ownerToken')
+  const ownerToken = options.ownerToken ?? (typeof savedOwner === 'string' && savedOwner ? savedOwner : crypto.randomUUID())
+  options.persistence?.write('ownerToken', ownerToken)
   const followUps = createFollowUpStore(options.persistence)
   const consumeQuestion = createMockQuestionUsage(options.persistence)
   const basicPublished = persistentMap<string, string>('basicPublished', options.persistence)
@@ -102,8 +105,44 @@ export function createChatHandlers(options: Options = {}) {
     }
     throw new FollowUpError('LOCKED', 403)
   }
+  // A Mock store represents one guest. No request-supplied owner or foreign ID
+  // can select another store. These routes do not define the backend contract.
+  let deletionAttempts = 0
+  let creationGeneration = 0
+  function eraseChat(chatId: string) {
+    analyses.remove(chatId)
+    followUps.remove(chatId)
+    for (const [key, entry] of requests) if (entry.result?.id === chatId) requests.delete(key)
+    for (const [key, value] of thoughtRequests) if (value.chatId === chatId) thoughtRequests.delete(key)
+    for (const [key, value] of cancellations) if (value.chatId === chatId) { cancellations.delete(key); cancellationAcks.delete(key) }
+    for (const [key, value] of basicRequests) if (value === chatId) { basicRequests.delete(key); basicGenerations.delete(key) }
+    for (const [key, value] of cancelledBasic) if (value === chatId) cancelledBasic.delete(key)
+    for (const [key, value] of results) if (value.chatId === chatId) results.delete(key)
+    for (const map of [chats, historyMetadata, thoughts, hints, basicLearning, basicAttempts, basicResults, settings, thoughtAttempts, basicPublished, cancelledDrafts, submittedDrafts]) map.delete(chatId)
+  }
+  async function deleteData(request: Request, chatId?: string) {
+    // Mock-only capability token, scoped to this store. A different guest gets
+    // the same 404 as an unknown ID; request body/query cannot choose an owner.
+    if (request.headers.get('X-Mock-Guest-Token') !== ownerToken) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+    if (chatId && !chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+    const scenario = options.deletionScenario?.() ?? 'success'
+    await delay(options.deletionDelayMs ?? options.delayMs ?? (scenario === 'slow' ? 5000 : 250))
+    if (scenario === 'error' || scenario === 'error-once' && ++deletionAttempts === 1) return HttpResponse.json({ code: 'DELETION_UNAVAILABLE' }, { status: 503 })
+    if (chatId) {
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
+      eraseChat(chatId)
+    } else {
+      creationGeneration++ // A late question-generation response cannot recreate erased data.
+      for (const id of [...chats.keys()]) eraseChat(id)
+      for (const key of [...requests.keys()]) requests.delete(key)
+    }
+    // Content-free usage timestamps remain, so deletion never resets cost limits.
+    return new HttpResponse(null, { status: 204 })
+  }
   const followUpFailure = (error: unknown) => HttpResponse.json({ code: error instanceof FollowUpError ? error.code : 'FOLLOW_UP_UNAVAILABLE' }, { status: error instanceof FollowUpError ? error.status : 503 })
   return [
+    http.delete(path, ({ request }) => deleteData(request)),
+    http.delete(`${path}/:chatId`, ({ params, request }) => deleteData(request, String(params.chatId))),
     http.post(`${path}/:chatId/analysis/cancel`, async ({ params, request }) => {
       const chatId = String(params.chatId)
       if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
@@ -111,6 +150,7 @@ export function createChatHandlers(options: Options = {}) {
       try { raw = await request.json() } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
       const body = raw as Record<string, unknown> | null
       if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 3 || !['SELF', 'BASIC'].includes(String(body.learningPath)) || typeof body.jobId !== 'string' || !body.jobId || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       const learningPath = body.learningPath as 'SELF' | 'BASIC', jobId = body.jobId
       const reply = async (status: string) => {
         if (status === 'CANCELLED') {
@@ -163,6 +203,7 @@ export function createChatHandlers(options: Options = {}) {
         try { raw = await request.json() } catch { throw new FollowUpError('INVALID_REQUEST', 400) }
         const body = raw as Record<string, unknown> | null
         if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2 || typeof body.question !== 'string' || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) throw new FollowUpError('INVALID_REQUEST', 400)
+        publicContext(chatId)
         const snapshot = await followUps.submit(chatId, { question: body.question, clientRequestId: body.clientRequestId }, async (attempt, previous) => {
           const scenario = options.followUpScenario?.() ?? 'success'
           await delay(options.followUpDelayMs ?? options.delayMs ?? (scenario === 'slow' ? 5000 : 900))
@@ -210,6 +251,7 @@ export function createChatHandlers(options: Options = {}) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
         body = value as Record<string, unknown>
       } catch { return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 }) }
+      if (!chats.has(chat.id)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       // Recheck after awaiting the body: thought submission may have raced this request.
       if (thoughts.has(chat.id) || basicLearning.has(chat.id)) return HttpResponse.json({ code: 'ALREADY_SUBMITTED' }, { status: 409 })
       const saved = hints.get(chat.id) ?? { level: 0 as HintLevel, stuckPoint: null as StuckPoint | null }
@@ -271,6 +313,7 @@ export function createChatHandlers(options: Options = {}) {
       if (Object.keys(body).length !== 1 || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) {
         return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       }
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       const owner = basicRequests.get(body.clientRequestId)
       if (owner && owner !== chatId) return HttpResponse.json({ code: 'REQUEST_CONFLICT' }, { status: 409 })
       if (basicGenerations.has(body.clientRequestId) && basicLearning.get(chatId)?.transitionId !== basicGenerations.get(body.clientRequestId)) return HttpResponse.json({ code: 'CANCELLED' }, { status: 409 })
@@ -296,6 +339,7 @@ export function createChatHandlers(options: Options = {}) {
       return HttpResponse.json(saved, { status: 202 })
     }),
     http.post(path, async ({ request }) => {
+      const generation = creationGeneration
       let body: Record<string, unknown>
       try {
         const value: unknown = await request.json()
@@ -313,6 +357,7 @@ export function createChatHandlers(options: Options = {}) {
       const draft = redactValue(original).value
       const error = validateQuestion(draft)
       if (error) return HttpResponse.json({ code: 'INVALID_INPUT', message: error }, { status: 400 })
+      if (generation !== creationGeneration) return HttpResponse.json({ code: 'CANCELLED' }, { status: 409 })
       const key = body.clientRequestId
       const fingerprint = JSON.stringify(draft)
       const entry = requests.get(key) ?? { fingerprint, attempts: 0 }
@@ -329,6 +374,7 @@ export function createChatHandlers(options: Options = {}) {
           const scenario = options.scenario?.() ?? 'success'
           await delay(options.delayMs ?? (scenario === 'slow' ? 5000 : 1200))
           if (scenario === 'error' || (scenario === 'error-once' && entry.attempts === 1)) return { ok: false }
+          if (generation !== creationGeneration) return { ok: false }
           const classified = classifyMockQuestion(draft, options.classificationScenario?.())
           const chat: LockedChat = {
             id: crypto.randomUUID(), status: 'LOCKED', ...draft, ...classified,
@@ -347,7 +393,7 @@ export function createChatHandlers(options: Options = {}) {
       }
       const result = await entry.pending
       entry.pending = undefined
-      return result.ok
+      return result.ok && generation === creationGeneration && chats.has(result.chat.id)
         ? HttpResponse.json(readLockedChat(result.chat), { status: 201 })
         : HttpResponse.json({ code: 'MOCK_PREPARATION_FAILED' }, { status: 503 })
     }),
@@ -364,6 +410,7 @@ export function createChatHandlers(options: Options = {}) {
         !body.clientRequestId || body.clientRequestId.length > 100) {
         return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       }
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       const previousRequest = thoughtRequests.get(body.clientRequestId)
       if (previousRequest && (previousRequest.chatId !== chatId || !analyses.isCurrent(chatId, previousRequest.jobId))) return HttpResponse.json({ code: 'CANCELLED' }, { status: 409 })
       if (basicLearning.has(chatId)) return HttpResponse.json({ code: 'LEARNING_PATH_CONFLICT' }, { status: 409 })
@@ -425,6 +472,7 @@ export function createChatHandlers(options: Options = {}) {
       if (typeof body.jobId !== 'string' || !body.jobId || typeof body.clientRequestId !== 'string' || !body.clientRequestId || body.clientRequestId.length > 100) {
         return HttpResponse.json({ code: 'INVALID_REQUEST' }, { status: 400 })
       }
+      if (!chats.has(chatId)) return HttpResponse.json({ code: 'NOT_FOUND' }, { status: 404 })
       try {
         return HttpResponse.json(analyses.retry(chatId, { jobId: body.jobId, clientRequestId: body.clientRequestId }), { status: 202 })
       } catch (error) {
@@ -467,6 +515,10 @@ export function createChatHandlers(options: Options = {}) {
 }
 
 export const handlers = createChatHandlers({
+  deletionScenario: () => {
+    const scenario = new URL(location.href).searchParams.get('deletion')
+    return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'
+  },
   cancelAckScenario: () => {
     const scenario = new URL(location.href).searchParams.get('cancel')
     return scenario === 'error' || scenario === 'error-once' || scenario === 'slow' ? scenario : 'success'

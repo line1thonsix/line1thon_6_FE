@@ -27,5 +27,10 @@ export function useConversationHistory() {
     const unsubscribe = subscribeHistoryChange(refresh)
     return () => { lifecycle.abort(); unsubscribe(); const current = active.current; active.current = null; current?.abort() }
   }, [refresh])
-  return { ...state, refresh }
+  const removeDeleted = (chatId?: string) => {
+    const controller = active.current; active.current = null; controller?.abort()
+    setState(previous => ({ status: 'ready', error: '', items: chatId ? previous.items.filter(item => item.id !== chatId) : [] }))
+    refresh()
+  }
+  return { ...state, refresh, removeDeleted }
 }

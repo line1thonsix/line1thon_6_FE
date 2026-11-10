@@ -4,8 +4,8 @@ import { Icon } from '../ui/Icon'
 import type { IconName } from '../ui/Icon'
 import { GuestMenu } from './GuestMenu'
 
-type SidebarProps = { onCollapse: () => void; onNewChat: () => void; onNotice?: (message: string) => void; onGuide?: () => void; guideActive?: boolean; currentQuestion?: string; recent?: HistoryItem[]; historyActive?: boolean; currentChatId?: string; historyError?: string; onHistory?: () => void; onOpenChat?: (id: string) => void; onHistoryRetry?: () => void }
-export function Sidebar({ onCollapse, onNewChat, onGuide, guideActive, currentQuestion, recent = [], historyActive, currentChatId, historyError, onHistory, onOpenChat, onHistoryRetry }: SidebarProps) {
+type SidebarProps = { onDeleteAll?: () => void; onCollapse: () => void; onNewChat: () => void; onNotice?: (message: string) => void; onGuide?: () => void; guideActive?: boolean; currentQuestion?: string; recent?: HistoryItem[]; historyActive?: boolean; currentChatId?: string; historyError?: string; onHistory?: () => void; onOpenChat?: (id: string) => void; onHistoryRetry?: () => void }
+export function Sidebar({ onDeleteAll, onCollapse, onNewChat, onGuide, guideActive, currentQuestion, recent = [], historyActive, currentChatId, historyError, onHistory, onOpenChat, onHistoryRetry }: SidebarProps) {
   const items: { label: string; icon: IconName; onClick: () => void }[] = [
     { label: '새 채팅', icon: 'newChat', onClick: onNewChat },
     { label: '학습 기록', icon: 'history', onClick: () => onHistory?.() },
@@ -29,7 +29,7 @@ export function Sidebar({ onCollapse, onNewChat, onGuide, guideActive, currentQu
         <div className="flex items-center gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-caption font-medium text-brand-deep">게</span>
           <div className="min-w-0 flex-1"><p className="text-body font-medium">게스트</p><p className="mt-0.5 whitespace-nowrap text-micro text-muted">이 브라우저에 자동 저장돼요</p></div>
-          <GuestMenu />
+          <GuestMenu onDelete={onDeleteAll} />
         </div>
       </div>
     </aside>

@@ -105,5 +105,9 @@ export function createAnalysisStore(options: Options = {}) {
     }
     return !!job && !job.cancelled && job.snapshot.jobId === jobId
   }
-  return { start, get, retry, cancel, isCurrent, commitResult }
+  function remove(chatId: string) {
+    jobs.delete(chatId)
+    for (const [key, value] of retries) if (value.chatId === chatId) retries.delete(key)
+  }
+  return { start, get, retry, cancel, isCurrent, commitResult, remove }
 }

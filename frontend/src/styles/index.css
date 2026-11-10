@@ -17,3 +17,12 @@
   .finding-conflict { --finding-line: var(--color-conflict-line); --finding-fg: var(--color-conflict-fg); }
   .finding-undetermined { --finding-line: var(--color-hold-line); --finding-fg: var(--color-hold-fg); }
 }
+
+.delete-confirmation::backdrop {
+  background: rgb(27 36 32 / 0.28);
+}
+@media (min-width: 768px) {
+  .delete-confirmation::backdrop {
+    background: linear-gradient(to right, transparent 256px, rgb(27 36 32 / 0.28) 256px);
+  }
+}

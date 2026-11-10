@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 
-type AppShellProps = { title: string; children: ReactNode; onNewChat: () => void; currentQuestion?: string; recent?: HistoryItem[]; historyActive?: boolean; guideActive?: boolean; onGuide?: () => void; currentChatId?: string; historyError?: string; onHistory?: () => void; onOpenChat?: (id: string) => void; onHistoryRetry?: () => void }
-export function AppShell({ title, children, onNewChat, currentQuestion, recent, historyActive, guideActive, onGuide, currentChatId, historyError, onHistory, onOpenChat, onHistoryRetry }: AppShellProps) {
+type AppShellProps = { onDeleteAll?: () => void; title: string; children: ReactNode; onNewChat: () => void; currentQuestion?: string; recent?: HistoryItem[]; historyActive?: boolean; guideActive?: boolean; onGuide?: () => void; currentChatId?: string; historyError?: string; onHistory?: () => void; onOpenChat?: (id: string) => void; onHistoryRetry?: () => void }
+export function AppShell({ onDeleteAll, title, children, onNewChat, currentQuestion, recent, historyActive, guideActive, onGuide, currentChatId, historyError, onHistory, onOpenChat, onHistoryRetry }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const drawer = useRef<HTMLDivElement>(null)
@@ -35,6 +35,7 @@ export function AppShell({ title, children, onNewChat, currentQuestion, recent, 
   }, [mobileOpen])
   function navigate(action?: () => void) { setMobileOpen(false); action?.() }
   const sidebar = {
+    onDeleteAll: onDeleteAll ? () => navigate(onDeleteAll) : undefined,
     recent, historyActive, guideActive, currentChatId, historyError, currentQuestion, onHistoryRetry,
     onGuide: () => navigate(onGuide), onHistory: () => navigate(onHistory), onNewChat: () => navigate(onNewChat),
     onOpenChat: (id: string) => { setMobileOpen(false); onOpenChat?.(id) },
