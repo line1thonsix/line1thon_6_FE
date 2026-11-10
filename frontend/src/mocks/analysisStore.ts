@@ -6,7 +6,7 @@ import { readAnalysisSnapshot } from '../api/analysisSnapshot.ts'
 
 export type AnalysisScenario = 'success' | 'slow' | 'fail-once' | 'fail-twice' | 'always-fail' | 'invalid-output' | 'recover' | 'timeout' | 'pending'
 type Options = { persistence?: MockPersistence; fallback?: (chatId: string) => boolean; now?: () => number; scenario?: () => AnalysisScenario; durationMs?: number; validateResult?: (chatId: string, jobId: string, resultId: string) => boolean }
-type Job = { snapshot: AnalysisSnapshot; scenario: AnalysisScenario; invalidOutput?: boolean }
+type Job = { snapshot: AnalysisSnapshot; scenario: AnalysisScenario; invalidOutput?: boolean; cancelled?: boolean }
 export class MockAnalysisError extends Error {
   readonly code: string
   constructor(code: string) { super(code); this.code = code }
@@ -19,9 +19,17 @@ export function createAnalysisStore(options: Options = {}) {
     const startedAt = now()
     return { snapshot: { jobId: crypto.randomUUID(), status: 'PENDING', attempt, maxAttempts: 3, startedAt, deadlineAt: startedAt + ANALYSIS_TIMEOUT_MS }, scenario: options.scenario?.() ?? 'success' }
   }
+  function commitResult(chatId: string, jobId: string, resultId: string): boolean {
+    const job = jobs.get(chatId)
+    if (!job || !isCurrent(chatId, jobId) || job.snapshot.status !== 'PENDING') return false
+    if (options.validateResult && !options.validateResult(chatId, jobId, resultId)) return false
+    job.snapshot = { ...job.snapshot, status: 'DONE', resultId }
+    jobs.set(chatId, job)
+    return true
+  }
   function get(chatId: string): AnalysisSnapshot | null {
     const job = jobs.get(chatId)
-    if (!job) return null
+    if (!job || !isCurrent(chatId, job.snapshot.jobId)) return null
     // Persist the scenario with the job so refresh cannot restart the delay.
     const duration = (options.durationMs ?? 3000) * (job.scenario === 'slow' ? 10 : 1)
     const snapshot = job.snapshot
@@ -39,12 +47,7 @@ export function createAnalysisStore(options: Options = {}) {
       else if (fail && elapsed >= duration * 2) job.snapshot = { ...snapshot, status: 'FAILED', reason: job.scenario === 'invalid-output' ? 'INVALID_OUTPUT' : 'AI_ERROR' }
       else if (!fail && !neverFinishes && elapsed >= duration * (job.scenario === 'recover' || fallback ? 2 : 1)) {
         // A result must contain at least one valid, source-grounded finding before DONE.
-        const validate = () => {
-          const resultId = crypto.randomUUID()
-          if (options.validateResult && !options.validateResult(chatId, snapshot.jobId, resultId)) return false
-          job.snapshot = { ...snapshot, status: 'DONE', resultId }
-          return true
-        }
+        const validate = () => commitResult(chatId, snapshot.jobId, crypto.randomUUID())
         if (!job.invalidOutput) {
           if (!validate()) {
             if (job.scenario === 'recover') job.snapshot = { ...snapshot, status: 'FAILED', reason: 'INVALID_OUTPUT' }
@@ -62,7 +65,8 @@ export function createAnalysisStore(options: Options = {}) {
     return readAnalysisSnapshot(job.snapshot)
   }
   function start(chatId: string): AnalysisSnapshot {
-    if (!jobs.has(chatId)) jobs.set(chatId, makeJob(1))
+    const previous = jobs.get(chatId)
+    if (!previous || previous.cancelled) jobs.set(chatId, makeJob(previous?.snapshot.attempt ?? 1))
     return get(chatId)!
   }
   function retry(chatId: string, request: MockAnalysisRetryRequest): AnalysisSnapshot {
@@ -79,5 +83,27 @@ export function createAnalysisStore(options: Options = {}) {
     retries.set(request.clientRequestId, { chatId, jobId: request.jobId })
     return get(chatId)!
   }
-  return { start, get, retry }
+  function cancel(chatId: string, jobId: string): 'CANCELLED' | 'COMPLETED' {
+    const current = jobs.get(chatId)
+    if (!current || current.snapshot.jobId !== jobId) throw new MockAnalysisError('STALE_JOB')
+    if (current.cancelled) return 'CANCELLED'
+    const snapshot = get(chatId)
+    if (!snapshot) throw new MockAnalysisError('STALE_JOB')
+    if (snapshot.status === 'DONE') return 'COMPLETED'
+    if (snapshot.status !== 'PENDING') throw new MockAnalysisError('NOT_PENDING')
+    // The job identity is a generation fence. A cancelled generation can never resolve.
+    current.cancelled = true
+    jobs.set(chatId, current)
+    return 'CANCELLED'
+  }
+  function isCurrent(chatId: string, jobId: string) {
+    const job = jobs.get(chatId)
+    if (options.persistence) {
+      const raw = options.persistence.read('jobs')
+      const persisted = Array.isArray(raw) ? raw.find(row => Array.isArray(row) && row[0] === chatId)?.[1] as Job | undefined : undefined
+      if (!persisted || persisted.cancelled || persisted.snapshot?.jobId !== jobId) return false
+    }
+    return !!job && !job.cancelled && job.snapshot.jobId === jobId
+  }
+  return { start, get, retry, cancel, isCurrent, commitResult }
 }

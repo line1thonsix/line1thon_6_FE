@@ -10,9 +10,10 @@ import { createMockChat } from '../api/chats'
 import { validateQuestion } from '../api/chatValidation'
 import type { MockCreateChatRequest } from '../api/mockChatContract'
 import type { QuestionDraft, LockedChat } from '../types/chat'
+import type { ThoughtDraft } from '../api/thoughtDraft'
 
 type Flow = { stage: 'editing' } | { stage: 'creating'; request: MockCreateChatRequest } |
-  { stage: 'error'; request: MockCreateChatRequest; message: string } | { stage: 'locked'; chat: LockedChat; receipt?: PendingThought | null; basicLearning?: BasicLearningTransition } | { stage: 'restoring' } | { stage: 'restore-error'; message: string }
+  { stage: 'error'; request: MockCreateChatRequest; message: string } | { stage: 'locked'; chat: LockedChat; receipt?: PendingThought | null; basicLearning?: BasicLearningTransition; cancellationDraft?: ThoughtDraft } | { stage: 'restoring' } | { stage: 'restore-error'; message: string }
 const emptyDraft = (): QuestionDraft => ({ question: '', code: '', type: defaultQuestionType })
 
 const key = workspaceKey(import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCKS === 'true')

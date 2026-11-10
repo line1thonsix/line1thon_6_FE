@@ -15,13 +15,14 @@ import type { FollowUpFlow } from './FollowUpConversation'
 import { validateFollowUp } from '../../api/followUpState'
 
 type Props = {
+  analysisCancel?: { busy: boolean; onCancel: () => void };
   followUp?: FollowUpFlow;
   draft: QuestionDraft; onChange: (value: QuestionDraft) => void; onSubmit: () => void;
   mode: 'editing' | 'creating' | 'error' | 'locked' | 'completed'; validation: string;
   thought: string; thoughtManual?: string; getThoughtDraft?: () => ThoughtDraft; onThoughtRestore?: (draft: ThoughtDraft) => void; onThoughtChange: (value: string, edit?: ThoughtEdit) => void;
   thoughtBlocked?: boolean; thoughtPhase?: ThoughtPhase; thoughtFeedback?: string; thoughtActionLabel?: string; onThoughtSubmit?: () => void; onThoughtBlur?: () => void;
 }
-export function QuestionComposer({ followUp, draft, onChange, onSubmit, mode, validation, thought, thoughtManual = thought, getThoughtDraft, onThoughtRestore, onThoughtChange, thoughtPhase = 'writing', thoughtBlocked = false, thoughtFeedback = '', thoughtActionLabel = '분석 대기 중', onThoughtSubmit, onThoughtBlur }: Props) {
+export function QuestionComposer({ analysisCancel, followUp, draft, onChange, onSubmit, mode, validation, thought, thoughtManual = thought, getThoughtDraft, onThoughtRestore, onThoughtChange, thoughtPhase = 'writing', thoughtBlocked = false, thoughtFeedback = '', thoughtActionLabel = '분석 대기 중', onThoughtSubmit, onThoughtBlur }: Props) {
   const [codeOpen, setCodeOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const editing = mode === 'editing'
@@ -43,7 +44,7 @@ export function QuestionComposer({ followUp, draft, onChange, onSubmit, mode, va
       <form onSubmit={event => { event.preventDefault(); if (following) followUp.submit(); else if (editing) onSubmit(); else if (thoughtEditable) onThoughtSubmit?.() }} className="flex flex-col gap-3">
         <Textarea ref={thoughtInput} aria-label={completed ? '대화 완료 안내' : locked ? '내 생각' : '질문'} aria-invalid={locked ? thoughtEditable && !!thoughtFeedback : editing && (!!validation || invalid)} aria-describedby={locked && thoughtEditable && thoughtFeedback ? 'thought-validation' : validation ? 'question-validation' : undefined} placeholder={completed ? undefined : locked ? '생각을 30자 이상 남기면 AI 답변을 열어 볼 수 있어요. 막히면 힌트로 시작하세요.' : '막힌 질문이나 궁금한 점을 적어 보세요'}
           {...(following ? { 'aria-label': '후속 질문', placeholder: '다른 주제의 질문은 새 채팅에서 던져 보세요.', 'aria-invalid': !!followUp.state.error } : {})}
-          value={following ? followUp.state.draft : completed ? '다른 주제의 질문은 새 채팅에서 던져 보세요.' : locked ? thoughtPhase === 'pending' ? '' : thought : editing ? draft.question : ''} readOnly={completed && !following} disabled={following ? !followEditable : !editing && !thoughtEditable && !completed} onBlur={thoughtEditable ? event => {
+          value={following ? followUp.state.draft : completed ? '다른 주제의 질문은 새 채팅에서 던져 보세요.' : locked ? thoughtPhase === 'pending' ? '' : thought : editing ? draft.question : ''} readOnly={completed && !following} disabled={!!analysisCancel || (following ? !followEditable : !editing && !thoughtEditable && !completed)} onBlur={thoughtEditable ? event => {
             // Let a choice click finish before validation can shift its position.
             if (!(event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-thought-choice]'))) onThoughtBlur?.()
           } : undefined}
@@ -60,7 +61,7 @@ export function QuestionComposer({ followUp, draft, onChange, onSubmit, mode, va
             {editing && draft.question.length > 0 && <span className={`text-caption ${draft.question.length > QUESTION_MAX_LENGTH ? 'text-danger' : 'text-muted'}`}>{draft.question.length.toLocaleString()} / 2,000</span>}
             {editing && codeOpen && <p className="text-caption text-muted">개인정보와 키는 지워 주세요</p>}
             {locked && thoughtPhase !== 'pending' && <span aria-label="생각 글자 수" className={`text-caption ${thoughtLength > 2000 ? 'text-danger' : thoughtLength > 0 ? 'text-brand' : 'text-muted'}`}>{manualLength} / 30자</span>}
-            <Button type={following || editing || thoughtEditable ? 'submit' : 'button'} variant="primary" aria-label={following ? '후속 질문 보내기' : locked ? thoughtLabel : '질문 보내기'} disabled={following ? !followSending : locked ? !thoughtSending : !editing || !draft.question.trim() || invalid} className="size-send rounded-[10px]"><Icon name={followSending || thoughtSending || (editing && draft.question.trim() && !invalid) ? 'sendActive' : 'send'} /></Button>
+            {analysisCancel ? <Button type="button" variant="primary" aria-label="분석 중지" disabled={analysisCancel.busy} onClick={analysisCancel.onCancel} className="size-send rounded-[10px]"><span aria-hidden="true" className="size-3 rounded-[2.5px] bg-page" /></Button> : <Button type={following || editing || thoughtEditable ? 'submit' : 'button'} variant="primary" aria-label={following ? '후속 질문 보내기' : locked ? thoughtLabel : '질문 보내기'} disabled={following ? !followSending : locked ? !thoughtSending : !editing || !draft.question.trim() || invalid} className="size-send rounded-[10px]"><Icon name={followSending || thoughtSending || (editing && draft.question.trim() && !invalid) ? 'sendActive' : 'send'} /></Button>}
           </div>
         </div>
       </form>

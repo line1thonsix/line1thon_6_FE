@@ -11,11 +11,12 @@ export function useAnalysis(chatId: string, initialJobId: string | null) {
   const stop = useRef<(() => void) | null>(null)
   const retryController = useRef<AbortController | null>(null)
   const retryRequest = useRef<MockAnalysisRetryRequest | null>(null)
+  const paused = useRef(false)
   useEffect(() => {
-    if (!initialJobId) return
+    if (!initialJobId || paused.current) return
     stop.current = watchAnalysis({
       fetchStatus: signal => fetchMockAnalysis(chatId, signal),
-      onStatus: value => { setSnapshot(value); setConnectionError(false) },
+      onStatus: value => { if (!paused.current) { setSnapshot(value); setConnectionError(false) } },
       onError: () => setConnectionError(true),
     })
     return () => { stop.current?.(); stop.current = null }
@@ -52,6 +53,7 @@ export function useAnalysis(chatId: string, initialJobId: string | null) {
   const completion: AnalysisCompletion | null = snapshot?.status === 'DONE'
     ? { chatId, jobId: snapshot.jobId, resultId: snapshot.resultId } : null
   return { snapshot, connectionError, retrying, retry, completion,
+    pause: () => { paused.current = true; stop.current?.(); const controller = retryController.current; retryController.current = null; controller?.abort() },
     reconnect: () => { if (!retryController.current) setCycle(value => value + 1) },
   }
 }

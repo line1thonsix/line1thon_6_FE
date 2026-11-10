@@ -26,5 +26,5 @@ export function useBasicLearningResult(transition: BasicLearningTransition) {
     return () => { if (active.current === controller) active.current = null; clearTimeout(timeout); controller.abort() }
   }, [chatId, transitionId, key])
   const state: State = response?.key === key ? response.state : { status: 'loading' }
-  return { state, reload: () => setCycle(value => value + 1) }
+  return { state, pause: () => { const controller = active.current; active.current = null; controller?.abort() }, reload: () => setCycle(value => value + 1) }
 }

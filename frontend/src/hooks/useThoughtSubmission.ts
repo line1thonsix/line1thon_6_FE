@@ -10,9 +10,12 @@ import type { ThoughtDraft, ThoughtEdit } from '../api/thoughtDraft'
 import type { LockedChat } from '../types/chat'
 import type { PendingThought, ThoughtPhase } from '../types/thought'
 
-export function useThoughtSubmission(chat: LockedChat, restoredReceipt: PendingThought | null = null) {
+export function useThoughtSubmission(chat: LockedChat, restoredReceipt: PendingThought | null = null, cancellationDraft?: ThoughtDraft) {
   const chatId = chat.id
-  const [initialDraft] = useState(() => readThoughtDraft(restoredReceipt?.thought ?? readSession(thoughtKey(chatId)), chat))
+  const [initialDraft] = useState(() => {
+    const saved = readThoughtDraft(readSession(thoughtKey(chatId)) ?? cancellationDraft, chat)
+    return restoredReceipt && saved.text.trim() !== restoredReceipt.thought ? readThoughtDraft(restoredReceipt.thought, chat) : saved
+  })
   const [draftState, setDraftState] = useState(initialDraft)
   const draft = draftState.text
   const [phase, setPhase] = useState<ThoughtPhase>(restoredReceipt ? 'pending' : 'writing')
@@ -49,7 +52,7 @@ export function useThoughtSubmission(chat: LockedChat, restoredReceipt: PendingT
     const timeout = setTimeout(() => controller.abort(), 15000)
     try {
       const saved = await submitMockThought(chatId, request, controller.signal)
-      if (active.current === controller) { writeSession(thoughtKey(chatId), null); setReceipt(saved); setPhase('pending') }
+      if (active.current === controller) { setReceipt(saved); setPhase('pending') }
     } catch (error: unknown) {
       if (active.current !== controller) return
       if (error instanceof ThoughtSubmissionError && error.kind === 'validation') {

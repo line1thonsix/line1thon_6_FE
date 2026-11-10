@@ -5,7 +5,7 @@ import { useFollowUps } from '../../hooks/useFollowUps'
 import { FollowUpMessages } from './FollowUpConversation'
 import { QuestionComposer } from './QuestionComposer'
 
-export function ResultConversation({ chat, ready, children }: { chat: LockedChat; ready: boolean; children: ReactNode }) {
+export function ResultConversation({ chat, ready, children, analysisCancel }: { chat: LockedChat; ready: boolean; children: ReactNode; analysisCancel?: { busy: boolean; onCancel: () => void } }) {
   const followUp = useFollowUps(chat.id, ready)
   const scroll = useRef<HTMLDivElement>(null)
   const { items, phase } = followUp.state
@@ -17,6 +17,6 @@ export function ResultConversation({ chat, ready, children }: { chat: LockedChat
       {children}
       {ready && <FollowUpMessages flow={followUp} />}
     </div></div>
-    <QuestionComposer draft={chat} mode="completed" followUp={ready ? followUp : undefined} validation="" onChange={() => {}} onSubmit={() => {}} thought="" onThoughtChange={() => {}} />
+    <QuestionComposer draft={chat} mode={analysisCancel ? 'locked' : 'completed'} thoughtPhase={analysisCancel ? 'pending' : undefined} analysisCancel={analysisCancel} followUp={ready ? followUp : undefined} validation="" onChange={() => {}} onSubmit={() => {}} thought="" onThoughtChange={() => {}} />
   </>
 }

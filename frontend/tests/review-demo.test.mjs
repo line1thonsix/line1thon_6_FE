@@ -153,15 +153,17 @@ test('MSW hint reveal and basic-learning prerequisites remain server-owned after
 })
 
 
-test('BASIC route restores the completed read-only composer without a submit control or extra learning badge', () => {
+test('BASIC loading keeps its composer disabled with F-19 stop control and no extra learning badge', () => {
   const chat = { id: 'basic-chat', status: 'LOCKED', question: '값은 언제 준비될까요?', code: '', type: 'DEBUGGING' }
   const transition = { chatId: chat.id, transitionId: 'transition', learningPath: 'BASIC', status: 'AWAITING_CONTENT', excludeFromGrowth: true }
   const html = renderToStaticMarkup(createElement(BasicLearningResult, { chat, transition, draft: '보존할 초안' }))
   const textarea = html.match(/<textarea\b[^>]*>[\s\S]*?<\/textarea>/u)?.[0] ?? ''
-  assert.ok(textarea.includes('다른 주제의 질문은 새 채팅에서 던져 보세요.'))
-  assert.match(textarea, /readonly/iu)
+  assert.ok(textarea.includes('생각을 30자 이상 남기면 AI 답변을 열어 볼 수 있어요.'))
+  assert.match(textarea, /\sdisabled=""/u)
   assert.equal(html.includes('type="submit"'), false)
-  assert.equal((html.match(/<button\b[^>]*disabled/gu) ?? []).length, 3)
+  assert.equal((html.match(/<button\b[^>]*\sdisabled=""/gu) ?? []).length, 2)
+  assert.match(html, /aria-label="분석 중지"/u)
+  assert.doesNotMatch(html, /<button\b[^>]*aria-label="분석 중지"[^>]*\sdisabled=""/u)
   assert.doesNotMatch(html, /도움받아 학습|시연용|이 탭에만 저장/u)
   assert.ok(html.includes('보존할 초안'))
 })

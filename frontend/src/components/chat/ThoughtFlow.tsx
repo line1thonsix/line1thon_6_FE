@@ -14,12 +14,16 @@ import { useAnalysis } from '../../hooks/useAnalysis'
 import { useThoughtSubmission } from '../../hooks/useThoughtSubmission'
 import type { PendingThought } from '../../types/thought'
 import type { LockedChat } from '../../types/chat'
+import type { ThoughtDraft } from '../../api/thoughtDraft'
+import { useAnalysisCancellation } from '../../hooks/useAnalysisCancellation'
 
-export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: LockedChat; restoredReceipt?: PendingThought | null; restoredBasic?: BasicLearningTransition }) {
-  const thought = useThoughtSubmission(chat, restoredReceipt)
+export function ThoughtFlow({ chat, restoredReceipt, restoredBasic, cancellationDraft, onReconcile = () => {} }: { chat: LockedChat; restoredReceipt?: PendingThought | null; restoredBasic?: BasicLearningTransition; cancellationDraft?: ThoughtDraft; onReconcile?: () => void }) {
+  const thought = useThoughtSubmission(chat, restoredReceipt, cancellationDraft)
   const hints = useHints(chat.id, thought.canStartBasic)
   const basicLearning = restoredBasic ?? hints.state?.basicLearning
   const analysis = useAnalysis(chat.id, thought.receipt?.analysis.jobId ?? null)
+  const targetId = !basicLearning && !analysis.retrying && thought.receipt && (!analysis.snapshot || analysis.snapshot.status === 'PENDING') ? analysis.snapshot?.jobId ?? thought.receipt.analysis.jobId : null
+  const cancellation = useAnalysisCancellation(chat.id, targetId ? { learningPath: 'SELF', jobId: targetId } : null, analysis.pause, onReconcile)
   const completedResultId = analysis.completion?.resultId
   const conversation = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -30,8 +34,8 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
     thought.selectChoice(index)
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
   }
-  if (basicLearning) return <BasicLearningResult chat={chat} transition={basicLearning} draft={thought.draft} />
-  if (analysis.completion && thought.receipt) return <ComparisonResult completion={analysis.completion} thought={thought.receipt.thought} chat={chat} />
+  if (basicLearning) return <BasicLearningResult chat={chat} transition={basicLearning} draft={thought.draft} onReconcile={onReconcile} />
+  if (!cancellation.uncertain && analysis.completion && thought.receipt) return <ComparisonResult completion={analysis.completion} thought={thought.receipt.thought} chat={chat} />
   return <>
     <div ref={conversation} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">
@@ -46,11 +50,12 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic }: { chat: Lo
 
             {thought.phase === 'failed' && <div role="alert"><p className="mt-2 text-body text-secondary">{thought.feedback}</p><Button className="mt-2 gap-1.5 text-body text-danger" onClick={thought.retry}>다시 제출해 볼게요<Icon name="retry" /></Button></div>}
           </section>}
-          {thought.phase === 'pending' && thought.receipt && <AnalysisStatus analysis={analysis} />}
+          {thought.phase === 'pending' && thought.receipt && <AnalysisStatus analysis={cancellation.uncertain ? { ...analysis, completion: null, connectionError: !!cancellation.error, reconnect: onReconcile } : analysis} />}
         </>}
       </div>
     </div>
     <QuestionComposer draft={chat} mode={analysis.completion ? 'completed' : 'locked'} validation="" onChange={() => {}} onSubmit={() => {}}
+      analysisCancel={targetId || cancellation.uncertain ? { busy: cancellation.busy, onCancel: cancellation.cancel } : undefined}
       thoughtBlocked={hints.transitionBlocked} thought={thought.draft} thoughtManual={thought.manual} getThoughtDraft={thought.getDraft} onThoughtRestore={thought.restoreEditor} onThoughtChange={thought.change} thoughtPhase={thought.phase}
       thoughtActionLabel={!analysis.retrying && analysis.snapshot?.status === 'FAILED' ? '분석 실패' : analysis.completion ? '분석 완료' : '분석 대기 중'}
       thoughtFeedback={thought.feedback} onThoughtSubmit={() => { if (hints.canWrite()) thought.submit() }} onThoughtBlur={thought.check} />

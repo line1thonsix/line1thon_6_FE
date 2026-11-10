@@ -6,6 +6,7 @@ import { useBasicLearningResult } from '../../hooks/useBasicLearningResult'
 import type { LockedChat } from '../../types/chat'
 import type { BasicLearningTransition } from '../../types/learning'
 import type { BasicLearningResult as Result } from '../../types/basicLearningResult'
+import { useAnalysisCancellation } from '../../hooks/useAnalysisCancellation'
 
 function LearningContent({ result }: { result: Result }) {
   return <div className="flex flex-col gap-3.5">
@@ -29,16 +30,19 @@ function LearningContent({ result }: { result: Result }) {
   </div>
 }
 
-export function BasicLearningResult({ chat, transition, draft }: { chat: LockedChat; transition: BasicLearningTransition; draft: string }) {
-  const { state, reload } = useBasicLearningResult(transition)
-  return <ResultConversation chat={chat} ready={state.status === 'ready'}>
+export function BasicLearningResult({ chat, transition, draft, onReconcile = () => {} }: { chat: LockedChat; transition: BasicLearningTransition; draft: string; onReconcile?: () => void }) {
+  const { state, reload, pause } = useBasicLearningResult(transition)
+  const cancellation = useAnalysisCancellation(chat.id, state.status === 'loading' ? { learningPath: 'BASIC', jobId: transition.transitionId } : null, pause, onReconcile, 'BASIC')
+  const ready = state.status === 'ready' && !cancellation.uncertain
+  return <ResultConversation chat={chat} ready={ready} analysisCancel={state.status === 'loading' || cancellation.uncertain ? { busy: cancellation.busy, onCancel: cancellation.cancel } : undefined}>
     <QuestionBubble draft={chat} />
     <section aria-label="기초 학습 결과" className="flex flex-col gap-3.5" aria-busy={state.status === 'loading'}>
       <p className="text-caption text-secondary">Deveil</p>
       <h2 className="text-body-lg font-medium">기초부터 함께 살펴볼게요.</h2>
       {state.status === 'loading' && <p role="status" className="rounded-learning-card bg-ai-surface p-4 text-body text-secondary motion-safe:animate-pulse">기초 개념과 작은 예시를 불러오고 있어요…</p>}
       {state.status === 'error' && <div role="alert" className="rounded-learning-card border border-line p-4"><p className="text-body text-secondary">{state.message}</p><Button className="mt-2 text-body text-brand underline" onClick={reload}>기초 학습 다시 불러오기</Button></div>}
-      {state.status === 'ready' && <><LearningContent result={state.result} /><PostResultNotes key={chat.id} chatId={chat.id} allowFeedback={false} /></>}
+      {cancellation.error && <div role="alert"><p className="text-body text-secondary">{cancellation.error}</p><Button className="mt-2 text-body text-brand underline" onClick={onReconcile}>기초 학습 다시 불러오기</Button></div>}
+      {ready && state.status === 'ready' && <><LearningContent result={state.result} /><PostResultNotes key={chat.id} chatId={chat.id} allowFeedback={false} /></>}
     </section>
     {draft && <details className="text-body"><summary className="cursor-pointer text-brand-deep">보관한 생각 초안</summary><p className="mt-2 whitespace-pre-wrap break-words">{draft}</p></details>}
   </ResultConversation>

@@ -4,6 +4,11 @@
 export type MockPersistence = { read(key: string): unknown; write(key: string, value: unknown): void }
 export function persistentMap<K, V>(name: string, storage?: MockPersistence): Map<K, V> {
   class PersistedMap extends Map<K, V> {
+    override delete(key: K): boolean {
+      const deleted = super.delete(key)
+      if (deleted) storage?.write(name, [...this])
+      return deleted
+    }
     override set(key: K, value: V): this {
       super.set(key, value)
       storage?.write(name, [...this])
