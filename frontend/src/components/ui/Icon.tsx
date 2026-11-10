@@ -1,3 +1,10 @@
+import guestDelete from '../../assets/icons/guest-delete.svg'
+import guideSend from '../../assets/icons/guide-send.svg'
+import guideNext from '../../assets/icons/guide-next.svg'
+import guideAlert from '../../assets/icons/guide-alert.svg'
+import guideInfo from '../../assets/icons/guide-info.svg'
+import guideShield from '../../assets/icons/guide-shield.svg'
+import guideStorage from '../../assets/icons/guide-storage.svg'
 import historyMore from '../../assets/icons/history-more.svg'
 import historyMoreHover from '../../assets/icons/history-more-hover.svg'
 import demoCheck from '../../assets/icons/demo-check.svg'
@@ -31,7 +38,7 @@ import plus from '../../assets/icons/plus.svg'
 import chevron from '../../assets/icons/chevron.svg'
 import send from '../../assets/icons/send.svg'
 
-const icons = { historyMore, historyMoreHover, demoCheck, demoSend, demoSendDisabled, basicNext, hintNext, hintSteps, hintCheck, evidenceDown, evidenceUp, checkChoice, more, newChat, history, info, sidebar, plus, chevron, send, check, chevronUp, code, expand, sendActive, collapse, codeChevron, lock, plusDisabled, chevronDisabled, retry, plusExample }
+const icons = { guestDelete, guideSend, guideNext, guideAlert, guideInfo, guideShield, guideStorage, historyMore, historyMoreHover, demoCheck, demoSend, demoSendDisabled, basicNext, hintNext, hintSteps, hintCheck, evidenceDown, evidenceUp, checkChoice, more, newChat, history, info, sidebar, plus, chevron, send, check, chevronUp, code, expand, sendActive, collapse, codeChevron, lock, plusDisabled, chevronDisabled, retry, plusExample }
 export type IconName = keyof typeof icons
 export function Icon({ name }: { name: IconName }) {
   return <img src={icons[name]} alt="" aria-hidden="true" className="block shrink-0" />

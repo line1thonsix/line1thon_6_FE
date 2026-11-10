@@ -1,4 +1,12 @@
 @theme {
+  --color-guide-number: #334d3b;
+  --color-guide-notice: #fefaf5;
+  --color-guide-divider: #e3e8e3;
+  --color-guide-next-bg: #e5f0e5;
+  --color-guide-next-line: #c9dbc9;
+  --color-guest-delete-bg: #fdf1ef;
+  --color-guest-delete-fg: #b3382c;
+  --shadow-guest-menu: 0 6px 20px rgb(0 0 0 / 0.08);
   --color-history-hover-line: #a3bfa8;
   --color-demo-sky-soft: #f4f9fc;
   --color-demo-sky-line: #d6e8f5;
