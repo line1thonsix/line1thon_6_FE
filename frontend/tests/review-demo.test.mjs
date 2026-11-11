@@ -189,3 +189,14 @@ test('hint 2 makes the existing sentence/arrow one BASIC button without a checkb
     assert.match(action, /\sdisabled(?:=|\s|>)/u)
   }
 })
+
+test('Railway hint-only panel keeps navigation while hiding unsupported actions', () => {
+  const hint = { level: 2, text: '공개된 두 번째 단서' }
+  const html = renderToStaticMarkup(createElement(HintPanel, {
+    hintsOnly: true,
+    hints: { state: { chatId: '1', level: 2, stuckPoint: null }, currentHint: hint, busy: false },
+  }))
+  assert.ok(html.includes(hint.text))
+  assert.ok(html.includes('이전 힌트 보기'))
+  assert.doesNotMatch(html, /기초 학습|어디서 막혔나요/)
+})

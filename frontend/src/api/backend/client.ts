@@ -3,8 +3,9 @@ import type { BackendErrorBody } from './contracts.ts'
 import { notifyRedaction } from '../../security/redactionNotice.ts'
 
 export interface GuestTokenStore { read(): string | null; write(token: string): void; clear(): void }
+export const GUEST_TOKEN_KEY = 'deveil:api:guest-token:v1'
 export function guestTokenStore(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>): GuestTokenStore {
-  const key = 'deveil:api:guest-token:v1'
+  const key = GUEST_TOKEN_KEY
   return { read: () => storage.getItem(key), write: token => storage.setItem(key, token), clear: () => storage.removeItem(key) }
 }
 export class BackendApiError extends Error {
@@ -19,8 +20,6 @@ export class BackendApiError extends Error {
 }
 type Options = {
   baseUrl: string; tokens: GuestTokenStore; fetch?: typeof fetch;
-  // Required until the session response DTO is verified against the server.
-  // No guessed `token` / `guestToken` / `accessToken` field is baked in.
   decodeSession: (value: unknown) => string;
 }
 function withSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -56,11 +55,18 @@ export function createBackendClient(options: Options) {
     return issuing
   }
   return {
-    async request<T>(path: string, init: { method: 'GET' | 'POST' | 'PATCH'; body?: unknown; signal: AbortSignal; decode: (value: unknown, httpStatus: number) => T }): Promise<T> {
+    ensureSession: (signal: AbortSignal) => {
+      signal.throwIfAborted()
+      return withSignal(token(), signal)
+    },
+    async request<T>(path: string, init: { method: 'GET' | 'POST' | 'PATCH'; body?: unknown; signal: AbortSignal; guest?: string; decode: (value: unknown, httpStatus: number) => T }): Promise<T> {
       if (!path.startsWith('/') || path.startsWith('//') || /[\\#]/u.test(path) || path.split(/[/?]/u).includes('..')) throw new Error('Invalid API path')
       if (!['GET', 'POST', 'PATCH'].includes(init.method)) throw new Error('Unsupported API method')
       init.signal.throwIfAborted()
-      const guest = await withSignal(token(), init.signal)
+      if (init.guest !== undefined && options.tokens.read() !== init.guest) {
+        throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
+      }
+      const guest = init.guest ?? await withSignal(token(), init.signal)
       init.signal.throwIfAborted()
       const safe = init.body === undefined ? undefined : redactValue(init.body)
       if (safe?.redacted) notifyRedaction()
@@ -75,10 +81,14 @@ export function createBackendClient(options: Options) {
         if (error.status === 401 && error.code === 'INVALID_TOKEN') {
           // A delayed 401 must not erase a newer session issued for another request.
           if (options.tokens.read() === guest) options.tokens.clear()
-          await withSignal(token(), init.signal)
+          await withSignal(token(), init.signal).catch(() => undefined)
           // Do not replay a mutation under a different owner/session automatically.
         }
         throw error
+      }
+      init.signal.throwIfAborted()
+      if (init.guest !== undefined && options.tokens.read() !== guest) {
+        throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
       }
       return init.decode(raw, response.status)
     },

@@ -1,7 +1,6 @@
 import type { AnalysisMode, BackendAnalysisStatus, BackendChatStatus, PrepareStatus } from './contracts.ts'
 
-// Normalized frontend contract, NOT the unverified /analysis or detail wire DTO.
-// A future endpoint adapter must explicitly map analysisStatus to analysis.status.
+// State projection of chat detail. Mutation receipts use analysisStatus separately.
 export type BackendLockState = {
   prepareStatus: PrepareStatus; status: BackendChatStatus; hintLevel: 0 | 1 | 2;
   analysis: { mode: AnalysisMode; status: BackendAnalysisStatus } | null;
@@ -40,7 +39,7 @@ export function backendPollTarget(state: BackendLockState): 'chat' | 'analysis' 
 export function assertNoResultContent(raw: unknown): void {
   if (!raw || typeof raw !== 'object') return
   for (const [key, value] of Object.entries(raw)) {
-    if (['referenceAnswer', 'findings', 'comparisonResult', 'score'].includes(key)) throw new Error('Unexpected protected result content')
+    if (['referenceAnswer', 'findings', 'comparisonResult', 'analysisResult', 'basicLearningResult', 'result', 'score'].includes(key)) throw new Error('Unexpected protected result content')
     assertNoResultContent(value)
   }
 }

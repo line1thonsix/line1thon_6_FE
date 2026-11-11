@@ -1,13 +1,13 @@
 import { helpTabs } from '../../data/helpTabs'
 import type { useHints } from '../../hooks/useHints'
 import { HintPanel } from './HintPanel'
+import type { HintPanelControls } from './HintPanel'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
-import type { LockedChat } from '../../types/chat'
 
-type Props = { chat: LockedChat; selectedChoice: number | null; onChoice: (index: number) => void; hints: ReturnType<typeof useHints> }
-export function LockedAnswer({ chat, selectedChoice, onChoice, hints }: Props) {
+type Props = { hintsOnly?: boolean; chat: { choices: string[] }; selectedChoice: number | null; onChoice: (index: number) => void; hints: HintPanelControls & Pick<ReturnType<typeof useHints>, 'tab' | 'select'> }
+export function LockedAnswer({ chat, selectedChoice, onChoice, hints, hintsOnly }: Props) {
   const tab = hints.tab
   return <section className="flex flex-col gap-2" aria-label="잠긴 AI 답변">
     <p className="text-caption text-secondary">StackOverGrow</p>
@@ -24,7 +24,7 @@ export function LockedAnswer({ chat, selectedChoice, onChoice, hints }: Props) {
 
     </div>
     <div role="tabpanel" id="help-panel" aria-labelledby={`tab-${tab}`}>
-      {tab === 'hints' ? <HintPanel hints={hints} /> : <div className="flex flex-wrap gap-2">{chat.choices.map((choice, index) => <Button key={choice} data-thought-choice variant="soft" aria-pressed={selectedChoice === index} className={`rounded-full border px-3.5 py-2 text-body text-ink ${selectedChoice === index ? 'border-brand' : 'border-transparent'}`} onClick={() => onChoice(index)}>{selectedChoice === index && <Icon name="checkChoice" />}{choice}</Button>)}</div>}
+      {tab === 'hints' ? <HintPanel hints={hints} hintsOnly={hintsOnly} /> : <div className="flex flex-wrap gap-2">{chat.choices.map((choice, index) => <Button key={choice} data-thought-choice variant="soft" aria-pressed={selectedChoice === index} className={`rounded-full border px-3.5 py-2 text-body text-ink ${selectedChoice === index ? 'border-brand' : 'border-transparent'}`} onClick={() => onChoice(index)}>{selectedChoice === index && <Icon name="checkChoice" />}{choice}</Button>)}</div>}
     </div>
   </section>
 }
