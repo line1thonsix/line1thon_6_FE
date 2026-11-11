@@ -3,6 +3,7 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import type { IconName } from '../ui/Icon'
 import { GuestMenu } from './GuestMenu'
+import wordmark from '../../assets/stackovergrow-wordmark.svg'
 
 type SidebarProps = { onDeleteAll?: () => void; onCollapse: () => void; onNewChat: () => void; onNotice?: (message: string) => void; onGuide?: () => void; guideActive?: boolean; currentQuestion?: string; recent?: HistoryItem[]; historyActive?: boolean; currentChatId?: string; historyError?: string; onHistory?: () => void; onOpenChat?: (id: string) => void; onHistoryRetry?: () => void }
 export function Sidebar({ onDeleteAll, onCollapse, onNewChat, onGuide, guideActive, currentQuestion, recent = [], historyActive, currentChatId, historyError, onHistory, onOpenChat, onHistoryRetry }: SidebarProps) {
@@ -13,9 +14,13 @@ export function Sidebar({ onDeleteAll, onCollapse, onNewChat, onGuide, guideActi
   ]
   return (
     <aside className="flex h-full w-sidebar shrink-0 flex-col gap-5 bg-sidebar p-shell" aria-label="사이드바">
-      <div className="flex items-center gap-2.5 py-1">
-        <span className="text-[22px] leading-7 font-light">De<span className="text-logo-accent">v</span>eil</span>
-        <Button className="ml-auto size-9 rounded-lg" aria-label="사이드바 접기" onClick={onCollapse}><Icon name="sidebar" /></Button>
+      <div className="flex h-11 shrink-0 items-start gap-[3px] pt-1">
+        <Button className="h-8 w-[34px] shrink-0 rounded-lg" aria-label="사이드바 접기" onClick={onCollapse}>
+          <Icon name="sidebar" />
+        </Button>
+        <Button variant="plain" className="h-8 shrink-0 rounded-lg" aria-label="StackOverGrow 홈" onClick={onNewChat}>
+          <img src={wordmark} alt="" width={137.854} height={26.3455} className="block shrink-0" />
+        </Button>
       </div>
       <nav className="flex flex-col gap-0.5" aria-label="주 메뉴">
         {items.map(item => { const active = historyActive && item.label === '학습 기록' || guideActive && item.label === '이용 안내'; return <Button variant="plain" key={item.label} aria-current={active ? 'page' : undefined} className={`justify-start gap-2.5 rounded-lg px-2.5 py-[9px] text-body text-secondary ${active ? 'bg-brand-soft' : 'hover:bg-brand-subtle'}`} onClick={item.onClick}><Icon name={item.icon} />{item.label}</Button> })}

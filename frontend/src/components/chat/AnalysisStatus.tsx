@@ -6,7 +6,7 @@ export function AnalysisStatus({ analysis }: { analysis: AnalysisController }) {
   const { snapshot, connectionError, retrying, completion } = analysis
   const exhausted = snapshot?.status === 'FAILED' && snapshot.attempt >= 3
   return <section aria-label="분석 상태" aria-busy={retrying || !snapshot || snapshot.status === 'PENDING'}>
-    <p className="text-caption text-secondary">Deveil</p>
+    <p className="text-caption text-secondary">StackOverGrow</p>
     {(!snapshot || snapshot.status === 'PENDING' || retrying) && <p role="status" className="mt-2 text-body-lg text-muted motion-safe:animate-pulse">두 관점을 연결하고 있어요…</p>}
     {snapshot && <p className="mt-2 text-caption text-muted">분석 시도 {snapshot.attempt} / {snapshot.maxAttempts}</p>}
     {snapshot?.status === 'FAILED' && !retrying && <div role="alert">

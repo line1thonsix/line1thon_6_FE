@@ -28,7 +28,7 @@ export function ComparisonResult({ completion, thought, chat }: { completion: An
   return <ResultConversation chat={chat} ready={state.status === 'ready'}>
     <QuestionBubble draft={chat} />
     <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{thought}</p></section></div>
-    <div className="flex flex-col gap-3"><p className="text-caption text-secondary">Deveil</p>
+    <div className="flex flex-col gap-3"><p className="text-caption text-secondary">StackOverGrow</p>
     {state.status === 'loading' && <p role="status" className="text-body-lg text-muted">비교 결과를 불러오고 있어요…</p>}
     {state.status === 'error' && <div role="alert"><p className="text-body text-secondary">{state.message}</p><Button className="mt-2 text-body text-brand underline" onClick={reload}>결과 다시 불러오기</Button></div>}
     {state.status === 'ready' && <ComparisonContent key={state.result.resultId} result={state.result} />}

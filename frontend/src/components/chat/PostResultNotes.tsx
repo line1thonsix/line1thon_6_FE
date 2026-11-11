@@ -34,7 +34,7 @@ export function PostResultNotesView({ state, allowFeedback = true, onOpen, onCha
     {state.error && <p id={errorId} role="alert" className="text-caption text-danger">{state.error}</p>}
     {state.order.filter(kind => allowFeedback || kind === 'reflection').map(kind => <div key={kind} className="flex flex-col gap-3.5" aria-label={kind === 'reflection' ? '저장한 배운 점' : '전송한 의견'}>
       <div className="flex justify-end"><p className="w-question-bubble max-w-full whitespace-pre-wrap rounded-composer bg-sidebar px-4 py-3 text-body-lg break-words">{state.saved[kind]}</p></div>
-      <div role="status" className="flex flex-col gap-1.5"><p className="text-caption font-medium text-secondary">Deveil</p><p className="text-body-lg">{noteConfig[kind].complete}</p></div>
+      <div role="status" className="flex flex-col gap-1.5"><p className="text-caption font-medium text-secondary">StackOverGrow</p><p className="text-body-lg">{noteConfig[kind].complete}</p></div>
     </div>)}
     <div ref={end} />
   </section>

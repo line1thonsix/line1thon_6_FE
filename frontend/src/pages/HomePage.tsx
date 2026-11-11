@@ -86,8 +86,8 @@ export function HomePage() {
         }} /> : <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4" aria-busy={flow.stage === 'creating'}>
           <div className="mx-auto flex w-full max-w-content flex-col gap-5">
             <QuestionBubble key={revision} draft={draft} />
-            {flow.stage === 'creating' && <div role="status"><p className="text-caption text-secondary">Deveil</p><p className="mt-2 text-body-lg text-muted motion-safe:animate-pulse">질문을 읽고 있어요…</p></div>}
-            {flow.stage === 'error' && <div role="alert"><p className="text-caption text-secondary">Deveil</p><p className="mt-2 text-body text-secondary">{flow.message}</p><Button className="mt-2 gap-1.5 text-body text-danger" onClick={retry}>다시 시도해 주세요<Icon name="retry" /></Button></div>}
+            {flow.stage === 'creating' && <div role="status"><p className="text-caption text-secondary">StackOverGrow</p><p className="mt-2 text-body-lg text-muted motion-safe:animate-pulse">질문을 읽고 있어요…</p></div>}
+            {flow.stage === 'error' && <div role="alert"><p className="text-caption text-secondary">StackOverGrow</p><p className="mt-2 text-body text-secondary">{flow.message}</p><Button className="mt-2 gap-1.5 text-body text-danger" onClick={retry}>다시 시도해 주세요<Icon name="retry" /></Button></div>}
           </div>
         </div>}
         <QuestionComposer key={revision} draft={draft} mode={flow.stage} validation={validation} onChange={updateDraft} onSubmit={() => submit()} thought="" onThoughtChange={() => {}} />

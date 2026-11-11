@@ -37,7 +37,7 @@ export function BasicLearningResult({ chat, transition, draft, onReconcile = () 
   return <ResultConversation chat={chat} ready={ready} analysisCancel={state.status === 'loading' || cancellation.uncertain ? { busy: cancellation.busy, onCancel: cancellation.cancel } : undefined}>
     <QuestionBubble draft={chat} />
     <section aria-label="기초 학습 결과" className="flex flex-col gap-3.5" aria-busy={state.status === 'loading'}>
-      <p className="text-caption text-secondary">Deveil</p>
+      <p className="text-caption text-secondary">StackOverGrow</p>
       <h2 className="text-body-lg font-medium">기초부터 함께 살펴볼게요.</h2>
       {state.status === 'loading' && <p role="status" className="rounded-learning-card bg-ai-surface p-4 text-body text-secondary motion-safe:animate-pulse">기초 개념과 작은 예시를 불러오고 있어요…</p>}
       {state.status === 'error' && <div role="alert" className="rounded-learning-card border border-line p-4"><p className="text-body text-secondary">{state.message}</p><Button className="mt-2 text-body text-brand underline" onClick={reload}>기초 학습 다시 불러오기</Button></div>}

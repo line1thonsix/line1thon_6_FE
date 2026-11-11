@@ -45,7 +45,7 @@ export function ThoughtFlow({ chat, restoredReceipt, restoredBasic, cancellation
         {thought.phase === 'writing' ? <LockedAnswer hints={hints} chat={chat} selectedChoice={thought.selectedChoice} onChoice={selectChoice} /> : <>
           <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{thought.receipt?.thought ?? thought.draft}</p></section></div>
           {thought.phase !== 'pending' && <section aria-label="생각 제출 상태" aria-busy={thought.phase === 'submitting'}>
-            <p className="text-caption text-secondary">Deveil</p>
+            <p className="text-caption text-secondary">StackOverGrow</p>
             {thought.phase === 'submitting' && <p role="status" className="mt-2 text-body-lg text-muted motion-safe:animate-pulse">내 생각을 안전하게 저장하고 있어요…</p>}
 
             {thought.phase === 'failed' && <div role="alert"><p className="mt-2 text-body text-secondary">{thought.feedback}</p><Button className="mt-2 gap-1.5 text-body text-danger" onClick={thought.retry}>다시 제출해 볼게요<Icon name="retry" /></Button></div>}
