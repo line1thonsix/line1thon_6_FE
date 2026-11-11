@@ -5,6 +5,9 @@ import { GUEST_TOKEN_KEY } from '../api/backend/client'
 import { createRailwayHistoryController } from '../api/backend/historyController'
 import type { RailwayDeleteSelection } from '../api/backend/historyController'
 import type { BackendClient } from '../api/backend/client'
+import { canRetryAnalysis, canStartBasic } from '../api/backend/analysis'
+import { ComparisonContent } from '../components/chat/ComparisonResult'
+import { LearningContent } from '../components/chat/BasicLearningResult'
 import type { BackendChatDetail } from '../api/backend/workspaceApi'
 import { editThoughtDraft, readThoughtDraft, toggleChoice } from '../api/thoughtDraft'
 import type { ThoughtDraft } from '../api/thoughtDraft'
@@ -37,6 +40,7 @@ function ReadyChat({ chat, flow }: { chat: BackendChatDetail; flow: Workspace })
   const [viewed, setViewed] = useState<1 | 2>(() => chat.hintLevel === 2 ? 2 : 1)
   const currentHint = chat.hints.find(hint => hint.level === viewed) ?? chat.hints.at(-1)
   const blocked = !!flow.busy || flow.needsSync || !!chat.thought
+  const job = flow.analysis ?? chat.analysis
   const canWrite = chat.status === 'LOCKED' && !chat.analysis && !blocked
 
   function update(next: ThoughtDraft) {
@@ -58,20 +62,40 @@ function ReadyChat({ chat, flow }: { chat: BackendChatDetail; flow: Workspace })
       if (chat.hintLevel === 1 && canWrite) flow.openHint(2)
     },
     viewFirst: () => setViewed(1),
+    transition: canStartBasic(chat) ? flow.startBasic : undefined,
+    transitioning: flow.busy === 'basic', transitionDisabled: flow.needsSync,
   }
 
-  const analysisMessage = chat.status !== 'LOCKED'
-    ? '분석이 완료됐어요. 결과 조회는 아직 지원되지 않아요.'
-    : chat.analysis?.status === 'FAILED'
-      ? '분석에 실패했어요. 제출한 생각은 저장됐어요.'
-      : chat.analysis?.status === 'PENDING' ? '두 관점을 연결하고 있어요…' : null
+  const showAnalysis = job || flow.busy === 'basic'
+  const pending = flow.busy === 'basic' || flow.busy === 'retryAnalysis' || job?.status === 'PENDING'
+  const basic = job?.mode === 'BASIC' || flow.busy === 'basic'
 
   return <>
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
       <div className="mx-auto flex w-full max-w-content flex-col gap-5">
         <QuestionBubble draft={chat} />
         {chat.thought && <div className="flex justify-end"><section aria-label="제출한 내 생각" className="w-question-bubble max-w-full rounded-composer bg-sidebar px-4 py-2.5"><p className="whitespace-pre-wrap text-body-lg break-words">{chat.thought}</p></section></div>}
-        {analysisMessage ? <p role="status" className="text-body-lg text-secondary">{analysisMessage}</p> : <LockedAnswer hintsOnly chat={chat} hints={hints} selectedChoice={draft.choiceIndex} onChoice={index => {
+        {showAnalysis ? <section aria-label={basic ? '기초 학습 결과' : '분석 상태'} className="flex flex-col gap-3" aria-busy={!!flow.busy}>
+          <p className="text-caption text-secondary">StackOverGrow</p>
+          {basic && <h2 className="text-body-lg font-medium">기초부터 함께 살펴볼게요.</h2>}
+          {pending && !flow.error && <p role="status" className="text-body-lg text-muted motion-safe:animate-pulse">{basic ? '기초 개념과 작은 예시를 불러오고 있어요…' : '두 관점을 연결하고 있어요…'}</p>}
+          {job && !flow.result && <p className="text-caption text-muted">분석 시도 {job.retryCount + 1} / {job.retryCount + job.remainingRetries + 1}</p>}
+          {job?.status === 'FAILED' && !pending && <div role="alert">
+            <p className="text-body text-secondary">{basic ? '기초 학습 설명을 생성하지 못했어요.' : 'AI 분석을 완료하지 못했어요. 제출한 생각은 저장됐어요.'}</p>
+            {flow.analysis?.errorCode && <p className="mt-1 text-caption text-muted">오류 코드 {flow.analysis.errorCode}</p>}
+            {job.remainingRetries === 0 ? <p className="mt-2 text-body text-secondary">분석 재시도 횟수를 모두 사용했어요.</p> :
+              <Button className="mt-2 gap-1.5 text-body text-danger" disabled={!!flow.busy || flow.needsSync || !canRetryAnalysis(flow.analysis)} onClick={flow.retryAnalysis}>다시 연결해 볼게요 ({job.remainingRetries}회 남음)<Icon name="retry" /></Button>}
+          </div>}
+          {job?.status === 'DONE' && !flow.result && !flow.error && <p role="status" className="text-body text-muted">분석 결과를 확인하고 있어요…</p>}
+          {flow.result?.mode === 'COMPARE' && <>
+            <ComparisonContent result={flow.result} notes={false} notice={flow.result.notice} />
+            {!flow.result.findings.length && <p role="status" className="text-body text-secondary">표시할 비교 항목이 없어요.</p>}
+          </>}
+          {flow.result?.mode === 'BASIC' && <>
+            {flow.result.responseSource === 'SAVED_EXAMPLE' && <span className="self-start rounded-control bg-brand-subtle px-2 py-1 text-caption text-brand-deep">저장 예시</span>}
+            <LearningContent result={flow.result} notice={flow.result.notice} />
+          </>}
+        </section> : <LockedAnswer hintsOnly chat={chat} hints={hints} selectedChoice={draft.choiceIndex} onChoice={index => {
           if (!canWrite) return
           update(toggleChoice(latest.current, preparation, index))
           requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="내 생각"]')?.focus())
@@ -79,11 +103,15 @@ function ReadyChat({ chat, flow }: { chat: BackendChatDetail; flow: Workspace })
         <RequestError flow={flow} />
       </div>
     </div>
+    {basic && draft.text && <details className="mx-auto w-full max-w-content px-6 pb-3 text-body">
+      <summary className="cursor-pointer text-brand-deep">보관한 생각 초안</summary>
+      <p className="mt-2 whitespace-pre-wrap break-words">{draft.text}</p>
+    </details>}
     {chat.status === 'LOCKED' && <QuestionComposer draft={chat} mode="locked" validation="" onChange={() => {}} onSubmit={() => {}}
       thought={draft.text} getThoughtDraft={() => latest.current} onThoughtRestore={update}
       onThoughtChange={(value, edit) => update(editThoughtDraft(latest.current, value, edit))}
-      thoughtBlocked={blocked} thoughtPhase={chat.analysis ? 'pending' : flow.busy === 'thought' ? 'submitting' : 'writing'}
-      thoughtActionLabel={chat.analysis?.status === 'FAILED' ? '분석 실패' : '분석 대기 중'}
+      thoughtBlocked={blocked} thoughtPhase={showAnalysis ? 'pending' : flow.busy === 'thought' ? 'submitting' : 'writing'}
+      thoughtActionLabel={job?.status === 'FAILED' ? '분석 실패' : '분석 대기 중'}
       onThoughtSubmit={() => { if (canWrite) flow.submitThought(latest.current) }} />}
   </>
 }
@@ -183,7 +211,10 @@ function RailwayWorkspace({ client }: { client: BackendClient }) {
           {!editing && <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4"><div className="mx-auto flex w-full max-w-content flex-col gap-5">
             {(chat || flow.busy === 'create') && <QuestionBubble draft={chat ?? flow.saved.draft} />}
             {!flow.error && !flow.detached && (chat?.prepareStatus === 'PREPARING' || flow.busy) && <p role="status" className="text-body-lg text-muted">{flow.saved.chatId && !chat ? '대화 상태를 확인하고 있어요…' : '질문을 읽고 있어요…'}</p>}
-            {chat?.prepareStatus === 'FAILED' && !flow.busy && !flow.needsSync && <Button className="self-start gap-1.5 text-body text-danger" onClick={flow.retry}>다시 시도해 주세요<Icon name="retry" /></Button>}
+            {chat?.prepareStatus === 'FAILED' && !flow.busy && !flow.needsSync && <div role="alert">
+              <p className="text-body text-secondary">AI가 질문을 준비하지 못했어요.</p>
+              <Button className="mt-2 gap-1.5 text-body text-danger" onClick={flow.retry}>다시 시도해 주세요<Icon name="retry" /></Button>
+            </div>}
             <RequestError flow={flow} />
           </div></div>}
           {editing ? <>

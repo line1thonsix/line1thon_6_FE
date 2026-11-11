@@ -5,6 +5,8 @@ import { createBackendChat } from '../api/backend/chats'
 import type { BackendCreateChatRequest } from '../api/backend/contracts'
 import { BACKEND_POLL_MS, readBackendTransition } from '../api/backend/lockState'
 import { validateBackendThought } from '../api/backend/validation'
+import { backendAnalysisApi, canRetryAnalysis, canStartBasic, pollBackendAnalysis } from '../api/backend/analysis'
+import type { BackendAnalysisJob, BackendAnalysisProgress, BackendAnalysisResult } from '../api/backend/analysis'
 import { backendWorkspaceApi } from '../api/backend/workspaceApi'
 import type { BackendChatDetail } from '../api/backend/workspaceApi'
 import { validateQuestion } from '../api/chatValidation'
@@ -27,6 +29,8 @@ type Saved = {
 }
 type Action =
   | { kind: 'restore' | 'refresh' | 'retryPrepare' }
+  | { kind: 'basic' }
+  | { kind: 'retryAnalysis'; job: BackendAnalysisJob }
   | { kind: 'open'; chatId: number; guest: string }
   | { kind: 'create'; request: BackendCreateChatRequest }
   | { kind: 'hint'; level: 1 | 2 }
@@ -71,7 +75,11 @@ const messages: Record<string, string> = {
   INVALID_INPUT: '입력한 내용과 글자 수를 확인해 주세요.',
   PREPARE_NOT_FAILED: '질문 준비 상태를 다시 확인해 주세요.',
   ALREADY_SUBMITTED: '이미 제출한 생각이 있어요. 대화 상태를 확인해 주세요.',
-  API_NOT_FOUND: '현재 서버에서 이 기능을 사용할 수 없어요.',
+  ANALYSIS_NOT_FOUND: '서버에서 분석 작업을 찾지 못했어요 (404). 상태를 다시 확인해 주세요.',
+  NOT_RETRYABLE: '현재 분석 상태에서는 재시도할 수 없어요. 상태를 다시 확인해 주세요.',
+  RETRY_LIMIT_EXCEEDED: '분석 재시도 횟수를 모두 사용했어요.',
+  BASIC_MODE_NOT_ALLOWED: '힌트 두 단계를 모두 확인해야 기초 학습을 시작할 수 있어요.',
+  API_NOT_FOUND: '현재 서버에서 이 API를 찾지 못했어요 (404).',
 }
 function safeInput<T>(value: T): T {
   const safe = redactValue(value)
@@ -85,6 +93,8 @@ export function useRailwayWorkspace(client: BackendClient) {
   const active = useRef<AbortController | null>(null)
   const openingChat = useRef<number | null>(null)
   const [detail, setDetail] = useState<BackendChatDetail | null>(null)
+  const [analysis, setAnalysis] = useState<BackendAnalysisProgress | null>(null)
+  const [result, setResult] = useState<BackendAnalysisResult | null>(null)
   const [busy, setBusy] = useState<Action['kind'] | null>(() => saved.chatId || saved.request ? 'restore' : null)
   const [error, setError] = useState('')
   const [requestId, setRequestId] = useState<string | null>(null)
@@ -104,6 +114,8 @@ export function useRailwayWorkspace(client: BackendClient) {
     openingChat.current = action.kind === 'open' ? action.chatId : null
     const signal = controller.signal
     setBusy(action.kind)
+    setResult(null)
+    if (action.kind !== 'retryAnalysis') setAnalysis(null)
     setError('')
     setRequestId(null)
     let saved = workspace.current
@@ -131,10 +143,14 @@ export function useRailwayWorkspace(client: BackendClient) {
       }
       const id = saved.chatId
       if (!id) return
+      const analysisApi = () => backendAnalysisApi(client, guest, AbortSignal.any([signal, AbortSignal.timeout(12000)]))
+      let expectedJob: number | undefined
+      if (action.kind === 'basic') expectedJob = await analysisApi().startBasic(id)
+      if (action.kind === 'retryAnalysis') expectedJob = await analysisApi().retry(id, action.job)
       if (action.kind === 'retryPrepare') await api().retryPrepare(id)
       if (action.kind === 'hint') await api().hint(id, action.level)
       if (action.kind === 'thought') {
-        await api().submitThought(id, { content: action.draft.text.trim(), selectedChoice: action.draft.choiceIndex })
+        expectedJob = await api().submitThought(id, { content: action.draft.text.trim(), selectedChoice: action.draft.choiceIndex })
       }
       let previous: BackendChatDetail | null = null
       for (;;) {
@@ -145,17 +161,29 @@ export function useRailwayWorkspace(client: BackendClient) {
         setDetail(next)
         setNeedsSync(false)
         if (next.secretMasked) notifyRedaction()
-        if (next.prepareStatus !== 'PREPARING' && next.analysis?.status !== 'PENDING') break
+        if (next.prepareStatus !== 'PREPARING') {
+          if (expectedJob !== undefined && next.analysis?.jobId !== expectedJob) throw new Error('Analysis job not reflected in chat detail')
+          const synced = await pollBackendAnalysis({
+            detail: next, get: () => analysisApi().get(id), refreshDetail: () => api().detail(id),
+            signal, wait: waitForPoll, onProgress: setAnalysis,
+          })
+          signal.throwIfAborted()
+          if (synced.detail !== next) setDetail(synced.detail)
+          setResult(synced.result)
+          break
+        }
         await waitForPoll(signal)
       }
     } catch (cause) {
       if (signal.aborted) return
       const backend = cause instanceof BackendApiError ? cause : null
       const code = backend?.code ?? 'CONNECTION'
-      setError(Object.hasOwn(messages, code) ? messages[code] : '서버 응답을 확인하지 못했어요. 다시 시도해 주세요.')
+      setError(Object.hasOwn(messages, code) ? messages[code] : backend?.status === 404 ? '서버에서 요청한 데이터를 찾지 못했어요 (404).' : '서버 응답을 확인하지 못했어요. 다시 시도해 주세요.')
       setRequestId(backend?.requestId ?? null)
       if (['INVALID_TOKEN', 'GUEST_CHANGED', 'CHAT_NOT_FOUND'].includes(code)) {
         setDetail(null)
+        setAnalysis(null)
+        setResult(null)
         setDetached(true)
       } else if (saved.chatId) {
         setNeedsSync(code !== 'INVALID_INPUT')
@@ -178,6 +206,8 @@ export function useRailwayWorkspace(client: BackendClient) {
       if (!workspace.current.owner) return
       active.current?.abort()
       setDetail(null)
+      setAnalysis(null)
+      setResult(null)
       setBusy(null)
       setDetached(true)
       setError(messages.GUEST_CHANGED)
@@ -233,6 +263,8 @@ export function useRailwayWorkspace(client: BackendClient) {
     }
     setBusy(null)
     setDetail(null)
+    setAnalysis(null)
+    setResult(null)
     setDetached(false)
     setNeedsSync(false)
     setError('')
@@ -260,9 +292,15 @@ export function useRailwayWorkspace(client: BackendClient) {
   }
 
   return {
-    saved, detail, busy, error, requestId, detached, needsSync, updateDraft, submit, reset, openChat, removeDeleted,
+    saved, detail, analysis, result, busy, error, requestId, detached, needsSync, updateDraft, submit, reset, openChat, removeDeleted,
     updateThought, submitThought,
     retry: () => void run({ kind: detail?.prepareStatus === 'FAILED' && !needsSync ? 'retryPrepare' : 'refresh' }),
+    startBasic: () => {
+      if (detail && !needsSync && !detached && canStartBasic(detail)) void run({ kind: 'basic' })
+    },
+    retryAnalysis: () => {
+      if (analysis && !needsSync && !detached && canRetryAnalysis(analysis)) void run({ kind: 'retryAnalysis', job: analysis })
+    },
     openHint: (level: 1 | 2) => {
       if (!needsSync && !detached && detail?.status === 'LOCKED' && !detail.analysis && !detail.thought && detail.hasNextHint && detail.hintLevel + 1 === level) void run({ kind: 'hint', level })
     },

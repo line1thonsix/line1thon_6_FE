@@ -24,9 +24,9 @@ export function FindingCard({ finding }: { finding: Finding }) {
     </div>}
     {open && <div id={detailId} className="mt-3 border-t border-line pt-3">
       <p className="text-caption text-muted">왜 이렇게 분류했나요?</p><p className="mt-1 whitespace-pre-wrap text-body break-words">{finding.reason}</p>
-      {finding.category === 'COMPLEMENT' && <div className="mt-2"><p className="text-caption text-muted">적용 조건</p><p className="mt-1 text-body">{finding.conditions}</p></div>}
-      {finding.category === 'CONFLICT' && <div className="mt-2"><p className="text-caption text-muted">충돌 근거</p><p className="mt-1 text-body">{finding.conflictEvidence}</p></div>}
-      <p className="mt-2 text-caption text-muted">직접 확인하는 방법</p><p className="mt-1 whitespace-pre-wrap text-body break-words">{finding.verification}</p>
+      {finding.category === 'COMPLEMENT' && finding.conditions && <div className="mt-2"><p className="text-caption text-muted">적용 조건</p><p className="mt-1 text-body">{finding.conditions}</p></div>}
+      {finding.category === 'CONFLICT' && finding.conflictEvidence && <div className="mt-2"><p className="text-caption text-muted">충돌 근거</p><p className="mt-1 text-body">{finding.conflictEvidence}</p></div>}
+      {finding.verification && <><p className="mt-2 text-caption text-muted">직접 확인하는 방법</p><p className="mt-1 whitespace-pre-wrap text-body break-words">{finding.verification}</p></>}
       {finding.verificationCode && <pre className="mt-2 overflow-x-auto rounded-lg bg-code-bg px-3 py-2 font-code text-code"><code>{finding.verificationCode}</code></pre>}
     </div>}
   </article>

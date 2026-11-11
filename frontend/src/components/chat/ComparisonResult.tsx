@@ -9,7 +9,11 @@ import { ResultConversation } from './ResultConversation'
 import { QuestionBubble } from './QuestionBubble'
 import type { LockedChat } from '../../types/chat'
 
-export function ComparisonContent({ result }: { result: Result }) {
+export function ComparisonContent({ result, notes = true, notice = comparisonDisclaimer }: {
+  result: Pick<Result, 'thought' | 'referenceAnswer' | 'findings' | 'responseSource'> & Partial<Pick<Result, 'chatId'>>
+  notes?: boolean
+  notice?: string
+}) {
   return <section aria-label="관점 비교 결과" className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-body-lg">이제 두 관점을 함께 볼까요?</p>{result.responseSource === 'SAVED_EXAMPLE' && <span className="rounded-control bg-brand-subtle px-2 py-1 text-caption text-brand-deep">저장 예시</span>}</div>
     <div className="grid grid-cols-2 gap-3" aria-label="두 관점 비교">
@@ -18,8 +22,8 @@ export function ComparisonContent({ result }: { result: Result }) {
     </div>
     <p className="sr-only" role="status">비교 항목 {result.findings.length}개</p>
     <div className="flex flex-col gap-2.5" aria-label="비교 항목 목록">{result.findings.map(finding => <FindingCard key={finding.id} finding={finding} />)}</div>
-    <p className="text-caption text-muted">{comparisonDisclaimer}</p>
-    <PostResultNotes key={result.chatId} chatId={result.chatId} />
+    <p className="text-caption text-muted">{notice}</p>
+    {notes && result.chatId && <PostResultNotes key={result.chatId} chatId={result.chatId} />}
   </section>
 }
 

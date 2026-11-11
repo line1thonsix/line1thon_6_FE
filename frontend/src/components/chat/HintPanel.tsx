@@ -10,8 +10,8 @@ const points: { value: StuckPoint; label: string }[] = [
 ]
 type MockHintControls = ReturnType<typeof useHints>
 export type HintPanelControls = Pick<MockHintControls, 'busy' | 'currentHint' | 'openFirst' | 'openSecond' | 'viewFirst' | 'error' | 'retry'>
-  & Partial<Pick<MockHintControls, 'transitioning' | 'uncertain' | 'transition' | 'choose' | 'transitionError' | 'recheckTransition'>>
-  & { state: Pick<NonNullable<MockHintControls['state']>, 'level' | 'chatId' | 'stuckPoint'> | null }
+  & Partial<Pick<MockHintControls, 'transitioning' | 'uncertain' | 'choose' | 'transitionError' | 'recheckTransition'>>
+  & { transition?: () => void | Promise<void>; transitionDisabled?: boolean; state: Pick<NonNullable<MockHintControls['state']>, 'level' | 'chatId' | 'stuckPoint'> | null }
 
 export function HintPanel({ hints, hintsOnly = false }: { hints: HintPanelControls; hintsOnly?: boolean }) {
   const current = hints.currentHint
@@ -27,7 +27,7 @@ export function HintPanel({ hints, hintsOnly = false }: { hints: HintPanelContro
       </> : <Button className="text-body text-brand-deep" disabled={hints.busy || !hints.state} onClick={hints.openFirst}>아직 감이 안 와요 · 힌트</Button>}
       {hints.busy && !hints.transitioning && <p role="status" className="mt-1 text-caption text-muted">힌트 상태를 확인하고 있어요…</p>}
       {hints.error && <div role="alert" className="mt-2 text-body text-danger"><p>{hints.error}</p><Button className="mt-1 underline" disabled={hints.busy} onClick={hints.retry}>힌트 다시 확인하기</Button></div>}
-      {current?.level === 2 && !hintsOnly && <Button variant="plain" className="mt-2 w-full border-t border-brand-soft pt-2 text-body text-secondary" disabled={hints.busy || hints.uncertain || !eligible} onClick={hints.transition}>
+      {current?.level === 2 && (!hintsOnly || hints.transition) && <Button variant="plain" className="mt-2 w-full border-t border-brand-soft pt-2 text-body text-secondary" disabled={hints.busy || hints.uncertain || hints.transitionDisabled || !eligible} onClick={hints.transition}>
         <span className="flex w-full items-center justify-between gap-3"><span className="flex-1 text-left">그래도 잘 모르겠다면 기초 학습으로 이어서 설명해 드릴게요.</span><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-basic-surface"><Icon name="basicNext" /></span></span>
       </Button>}
     </div>

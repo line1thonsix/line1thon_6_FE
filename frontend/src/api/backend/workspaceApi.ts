@@ -4,6 +4,9 @@ import type { BackendQuestionType } from './contracts.ts'
 import { assertNoResultContent, readBackendLockState } from './lockState.ts'
 import type { BackendLockState } from './lockState.ts'
 
+import { readDetailJob } from './analysis.ts'
+import type { BackendAnalysisJob } from './analysis.ts'
+
 type Hint = { level: 1 | 2; text: string }
 export type BackendChatDetail = BackendLockState & {
   chatId: number
@@ -15,6 +18,8 @@ export type BackendChatDetail = BackendLockState & {
   hints: Hint[]
   hasNextHint: boolean
   thought: string | null
+  analysis: BackendAnalysisJob | null
+  basicModeAvailable?: boolean
 }
 
 function record(raw: unknown): Record<string, unknown> {
@@ -55,6 +60,7 @@ export function readChatDetail(raw: unknown, chatId: number): BackendChatDetail 
     ...state, chatId, type: value.type as BackendQuestionType, question: value.question,
     code: value.code ?? '', secretMasked: value.secretMasked, choices: (choices ?? []) as string[],
     hints, hasNextHint: value.hasNextHint, thought: value.thought,
+    analysis: readDetailJob(value.analysis), basicModeAvailable: value.basicModeAvailable === true,
   }
 }
 
@@ -70,6 +76,7 @@ export function readThoughtReceipt(raw: unknown, status: number) {
   const value = record(raw)
   if (![200, 202].includes(status) || !positiveId(value.jobId) || value.mode !== 'COMPARE' ||
       value.status !== 'LOCKED' || value.analysisStatus !== 'PENDING') throw new Error('Invalid backend thought response')
+  return Number(value.jobId)
 }
 
 export function backendWorkspaceApi(client: BackendClient, guest: string, signal: AbortSignal) {
