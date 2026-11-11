@@ -12,7 +12,7 @@ import type { ThoughtDraft } from '../api/thoughtDraft'
 import { defaultQuestionType } from '../data/questionTypes'
 import { notifyRedaction } from '../security/redactionNotice'
 import { redactValue } from '../security/redaction'
-import { readSession, writeSession } from '../storage/session'
+import { readSession, workspaceKey, writeSession } from '../storage/session'
 import { questionTypes } from '../types/chat'
 import type { QuestionDraft } from '../types/chat'
 
@@ -27,6 +27,7 @@ type Saved = {
 }
 type Action =
   | { kind: 'restore' | 'refresh' | 'retryPrepare' }
+  | { kind: 'open'; chatId: number; guest: string }
   | { kind: 'create'; request: BackendCreateChatRequest }
   | { kind: 'hint'; level: 1 | 2 }
   | { kind: 'thought'; draft: ThoughtDraft }
@@ -82,6 +83,7 @@ export function useRailwayWorkspace(client: BackendClient) {
   const [saved, setSaved] = useState(readWorkspace)
   const workspace = useRef(saved)
   const active = useRef<AbortController | null>(null)
+  const openingChat = useRef<number | null>(null)
   const [detail, setDetail] = useState<BackendChatDetail | null>(null)
   const [busy, setBusy] = useState<Action['kind'] | null>(() => saved.chatId || saved.request ? 'restore' : null)
   const [error, setError] = useState('')
@@ -99,15 +101,22 @@ export function useRailwayWorkspace(client: BackendClient) {
     if (active.current) return
     const controller = new AbortController()
     active.current = controller
+    openingChat.current = action.kind === 'open' ? action.chatId : null
     const signal = controller.signal
     setBusy(action.kind)
     setError('')
     setRequestId(null)
     let saved = workspace.current
     try {
-      const guest = await client.ensureSession(AbortSignal.any([signal, AbortSignal.timeout(12000)]))
+      const guest = action.kind === 'open' ? action.guest : await client.ensureSession(AbortSignal.any([signal, AbortSignal.timeout(12000)]))
+      if (!client.isGuest(guest)) throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
       const owner = await guestFingerprint(guest)
       signal.throwIfAborted()
+      if (action.kind === 'open') {
+        if (!client.isGuest(guest)) throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
+        saved = { draft: emptyDraft(), chatId: action.chatId, owner }
+        persist(saved)
+      }
       if (saved.owner && saved.owner !== owner) throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
       const api = () => backendWorkspaceApi(client, guest, AbortSignal.any([signal, AbortSignal.timeout(12000)]))
       const request = action.kind === 'create' ? action.request : saved.request
@@ -115,6 +124,7 @@ export function useRailwayWorkspace(client: BackendClient) {
         saved = { ...saved, owner, request }
         persist(saved)
         const receipt = await createBackendChat(client, request, AbortSignal.any([signal, AbortSignal.timeout(12000)]), guest)
+        signal.throwIfAborted()
         saved = { draft: saved.draft, owner, chatId: receipt.chatId }
         persist(saved)
         if (receipt.secretMasked) notifyRedaction()
@@ -155,6 +165,7 @@ export function useRailwayWorkspace(client: BackendClient) {
     } finally {
       if (active.current === controller) {
         active.current = null
+        openingChat.current = null
         setBusy(null)
       }
     }
@@ -163,22 +174,27 @@ export function useRailwayWorkspace(client: BackendClient) {
   useEffect(() => {
     const lifecycle = new AbortController()
     queueMicrotask(() => { if (!lifecycle.signal.aborted) void run({ kind: 'restore' }) })
-    const guestChanged = (event: StorageEvent) => {
-      if ((event.key !== GUEST_TOKEN_KEY && event.key !== null) || (event.key !== null && event.oldValue === event.newValue) || !workspace.current.owner) return
+    const detach = () => {
+      if (!workspace.current.owner) return
       active.current?.abort()
       setDetail(null)
       setBusy(null)
       setDetached(true)
       setError(messages.GUEST_CHANGED)
     }
+    const guestChanged = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && (event.key === GUEST_TOKEN_KEY || event.key === null)) detach()
+    }
+    const unsubscribe = client.subscribeGuestInvalidation(detach)
     window.addEventListener('storage', guestChanged)
     return () => {
       lifecycle.abort()
       active.current?.abort()
       active.current = null
+      unsubscribe()
       window.removeEventListener('storage', guestChanged)
     }
-  }, [run])
+  }, [client, run])
 
   function updateDraft(draft: QuestionDraft) {
     if (active.current || workspace.current.chatId || detached) return
@@ -204,18 +220,30 @@ export function useRailwayWorkspace(client: BackendClient) {
       clientRequestId: crypto.randomUUID(), question: safe.question.trim(), code: safe.code || null, type: safe.type, exampleId,
     } })
   }
-  function reset() {
+  function reset(clearData = false) {
     active.current?.abort()
     active.current = null
+    openingChat.current = null
     const current = workspace.current
     // An unsent question remains editable after guest renewal. Server chats stay owner-bound.
-    persist({ draft: detached && !current.chatId ? current.draft : emptyDraft() })
+    persist({ draft: !clearData && detached && !current.chatId ? current.draft : emptyDraft() })
+    if (clearData) {
+      writeSession(key, null)
+      writeSession(workspaceKey(false), null)
+    }
     setBusy(null)
     setDetail(null)
     setDetached(false)
     setNeedsSync(false)
     setError('')
     setRequestId(null)
+  }
+  function openChat(chatId: number, guest: string) {
+    reset()
+    void run({ kind: 'open', chatId, guest })
+  }
+  function removeDeleted(chatId?: number) {
+    if (chatId === undefined || workspace.current.chatId === chatId || openingChat.current === chatId) reset(true)
   }
   function updateThought(thought: ThoughtDraft) {
     if (active.current || !detail || detail.status !== 'LOCKED' || detail.analysis || detail.thought || detached || needsSync) return
@@ -232,7 +260,7 @@ export function useRailwayWorkspace(client: BackendClient) {
   }
 
   return {
-    saved, detail, busy, error, requestId, detached, needsSync, updateDraft, submit, reset,
+    saved, detail, busy, error, requestId, detached, needsSync, updateDraft, submit, reset, openChat, removeDeleted,
     updateThought, submitThought,
     retry: () => void run({ kind: detail?.prepareStatus === 'FAILED' && !needsSync ? 'retryPrepare' : 'refresh' }),
     openHint: (level: 1 | 2) => {

@@ -1,6 +1,9 @@
-import { useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useSearchParams } from 'react-router'
 import { makeRailwayClient } from '../api/backend/runtime'
+import { GUEST_TOKEN_KEY } from '../api/backend/client'
+import { createRailwayHistoryController } from '../api/backend/historyController'
+import type { RailwayDeleteSelection } from '../api/backend/historyController'
 import type { BackendClient } from '../api/backend/client'
 import type { BackendChatDetail } from '../api/backend/workspaceApi'
 import { editThoughtDraft, readThoughtDraft, toggleChoice } from '../api/thoughtDraft'
@@ -9,6 +12,8 @@ import { LockedAnswer } from '../components/chat/LockedAnswer'
 import { QuestionBubble } from '../components/chat/QuestionBubble'
 import { QuestionComposer } from '../components/chat/QuestionComposer'
 import { Welcome } from '../components/chat/Welcome'
+import { LearningHistory } from '../components/history/LearningHistory'
+import { DeleteConfirmation } from '../components/layout/DeleteConfirmation'
 import { AppShell } from '../components/layout/AppShell'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
@@ -95,20 +100,80 @@ function RequestError({ flow }: { flow: Workspace }) {
 
 function RailwayWorkspace({ client }: { client: BackendClient }) {
   const flow = useRailwayWorkspace(client)
+  const [historyController] = useState(() => createRailwayHistoryController(client))
+  const history = useSyncExternalStore(historyController.subscribe, historyController.getSnapshot)
+  const [deletion, setDeletion] = useState<RailwayDeleteSelection | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deletionError, setDeletionError] = useState(false)
+  const deletionActive = useRef(false)
   const wasRedacted = useSyncExternalStore(subscribeRedaction, redactionOccurred, () => false)
   const cannotSave = useSyncExternalStore(subscribeStorage, storageUnavailable, () => false)
   const [params, setParams] = useSearchParams()
   const view = workspaceView(params)
   const show = (next: WorkspaceView) => setParams(previous => workspaceViewParams(previous, next))
   const chat = flow.detail
+  const historyActive = view === 'history'
+  useEffect(() => {
+    const changeGuest = () => {
+      historyController.invalidate()
+      void historyController.refresh()
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && (event.key === GUEST_TOKEN_KEY || event.key === null)) changeGuest()
+    }
+    const unsubscribe = client.subscribeGuestInvalidation(() => {
+      historyController.invalidate('게스트 세션이 만료됐어요. 학습 기록을 다시 불러와 주세요.')
+    })
+    window.addEventListener('storage', onStorage)
+    return () => {
+      unsubscribe()
+      window.removeEventListener('storage', onStorage)
+      historyController.stop()
+    }
+  }, [client, historyController])
+  useEffect(() => {
+    void historyController.refresh()
+  }, [historyController, historyActive, flow.saved.chatId, chat?.status])
+
+  function openChat(id: string) {
+    const selection = historyController.select(id)
+    if (selection?.chatId === undefined) return
+    flow.openChat(selection.chatId, selection.guest)
+    show('chat')
+  }
+  function askDeletion(id?: string) {
+    const selection = historyController.select(id)
+    if (!selection) return
+    setDeletionError(false)
+    setDeletion(selection)
+  }
+  async function confirmDeletion() {
+    if (!deletion || deletionActive.current) return
+    deletionActive.current = true
+    setDeleting(true)
+    setDeletionError(false)
+    try {
+      if (await historyController.confirm(deletion, flow.removeDeleted)) setDeletion(null)
+    } catch {
+      setDeletionError(true)
+    } finally {
+      deletionActive.current = false
+      setDeleting(false)
+    }
+  }
+
   const editing = !flow.detached && !flow.saved.chatId && !flow.busy
-  return <AppShell title={view === 'guide' ? '이용 안내' : view === 'history' ? '학습 기록' : chat?.question ?? '새 채팅'}
-    guideActive={view === 'guide'} historyActive={view === 'history'} onGuide={() => show('guide')} onHistory={() => show('history')}
+  return <><AppShell title={view === 'guide' ? '이용 안내' : view === 'history' ? '학습 기록' : chat?.question ?? '새 채팅'}
+    guideActive={view === 'guide'} historyActive={historyActive} recent={history.items}
+    currentChatId={chat ? String(chat.chatId) : undefined} onOpenChat={openChat}
+    historyError={!historyActive && history.status === 'error' ? history.error : undefined}
+    onHistoryRetry={() => void historyController.refresh()} onDeleteAll={() => askDeletion()} onGuide={() => show('guide')} onHistory={() => show('history')}
     onNewChat={() => { flow.reset(); show('chat') }}>
     <main className="flex min-h-0 flex-1 flex-col">
       {wasRedacted && <p role="status" className="px-6 py-1 text-caption text-brand-deep">알려진 비밀정보를 저장·전송 데이터에서 [REDACTED]로 가렸어요. 작성 중인 원문은 입력칸에 남을 수 있어요.</p>}
       {cannotSave && <p role="alert" className="px-6 py-1 text-caption text-danger">브라우저 임시 저장을 사용할 수 없어 새로고침 시 복구되지 않을 수 있어요.</p>}
-      {view === 'guide' ? <UsageGuide /> : view === 'history' ? <p className="m-auto p-6 text-body text-muted">현재 서버에서 학습 기록 조회를 지원하지 않아요.</p>
+      {view === 'guide' ? <UsageGuide /> : historyActive ? <LearningHistory items={history.items} status={history.status} error={history.error}
+          onRetry={() => void historyController.refresh()} onOpen={openChat} onDelete={askDeletion} />
         : chat?.prepareStatus === 'DONE' ? <ReadyChat key={chat.chatId} chat={chat} flow={flow} />
         : <>
           {editing && <Welcome onSelect={question => {
@@ -128,6 +193,10 @@ function RailwayWorkspace({ client }: { client: BackendClient }) {
         </>}
     </main>
   </AppShell>
+  {deletion && <DeleteConfirmation
+    target={deletion.chatId === undefined ? { kind: 'all' } : { kind: 'chat', chatId: String(deletion.chatId) }}
+    busy={deleting} error={deletionError} onCancel={() => setDeletion(null)} onConfirm={() => void confirmDeletion()} />}
+  </>
 }
 
 export function RailwayHomePage({ baseUrl }: { baseUrl?: string }) {

@@ -37,6 +37,12 @@ export function createBackendClient(options: Options) {
   if (!(base.startsWith('/') && !base.startsWith('//')) && !/^https?:\/\//u.test(base)) throw new Error('Invalid API base URL')
   if (/[?#\\]/u.test(base)) throw new Error('Invalid API base URL')
   let issuing: Promise<string> | null = null
+  const invalidationListeners = new Set<() => void>()
+  function forgetGuest(guest: string) {
+    if (options.tokens.read() !== guest) return false
+    options.tokens.clear()
+    return true
+  }
   async function token(): Promise<string> {
     const existing = options.tokens.read()
     if (existing) return existing
@@ -55,13 +61,23 @@ export function createBackendClient(options: Options) {
     return issuing
   }
   return {
+    isGuest: (guest: string) => options.tokens.read() === guest,
+    forgetGuest,
+    subscribeGuestInvalidation(listener: () => void) {
+      invalidationListeners.add(listener)
+      return () => { invalidationListeners.delete(listener) }
+    },
     ensureSession: (signal: AbortSignal) => {
       signal.throwIfAborted()
       return withSignal(token(), signal)
     },
-    async request<T>(path: string, init: { method: 'GET' | 'POST' | 'PATCH'; body?: unknown; signal: AbortSignal; guest?: string; decode: (value: unknown, httpStatus: number) => T }): Promise<T> {
+    async request<T>(path: string, init: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; signal: AbortSignal; guest?: string; decode: (value: unknown, httpStatus: number) => T }): Promise<T> {
       if (!path.startsWith('/') || path.startsWith('//') || /[\\#]/u.test(path) || path.split(/[/?]/u).includes('..')) throw new Error('Invalid API path')
-      if (!['GET', 'POST', 'PATCH'].includes(init.method)) throw new Error('Unsupported API method')
+      if (init.method === 'DELETE') {
+        if (!init.guest || init.body !== undefined || !/^\/(?:sessions\/me|chats\/[1-9][0-9]*)$/u.test(path)) {
+          throw new Error('Unsupported delete request')
+        }
+      } else if (!['GET', 'POST', 'PATCH'].includes(init.method)) throw new Error('Unsupported API method')
       init.signal.throwIfAborted()
       if (init.guest !== undefined && options.tokens.read() !== init.guest) {
         throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
@@ -72,21 +88,22 @@ export function createBackendClient(options: Options) {
       if (safe?.redacted) notifyRedaction()
       const response = await fetcher(base + path, {
         method: init.method, credentials: 'omit', signal: init.signal,
+        ...(init.method === 'GET' ? { cache: 'no-store' as const } : {}),
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Guest-Token': guest },
         ...(safe === undefined ? {} : { body: JSON.stringify(safe.value) }),
       })
       const raw: unknown = await response.json().catch(() => null)
+      init.signal.throwIfAborted()
       if (!response.ok) {
         const error = new BackendApiError(response.status, raw && typeof raw === 'object' ? raw : {})
         if (error.status === 401 && error.code === 'INVALID_TOKEN') {
           // A delayed 401 must not erase a newer session issued for another request.
-          if (options.tokens.read() === guest) options.tokens.clear()
+          if (forgetGuest(guest)) invalidationListeners.forEach(listener => listener())
           await withSignal(token(), init.signal).catch(() => undefined)
           // Do not replay a mutation under a different owner/session automatically.
         }
         throw error
       }
-      init.signal.throwIfAborted()
       if (init.guest !== undefined && options.tokens.read() !== guest) {
         throw new BackendApiError(401, { code: 'GUEST_CHANGED' })
       }

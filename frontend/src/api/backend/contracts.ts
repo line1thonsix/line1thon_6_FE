@@ -18,7 +18,7 @@ export type BackendCreatedChat = {
 }
 export type BackendErrorBody = { code: string; message: string; requestId: string }
 export const backendPaths = {
-  sessions: '/sessions', chats: '/chats',
+  sessions: '/sessions', chats: '/chats', sessionMe: '/sessions/me',
   chat: (id: number) => `/chats/${chatId(id)}`,
   prepareRetry: (id: number) => `/chats/${chatId(id)}/prepare/retry`,
   thoughts: (id: number) => `/chats/${chatId(id)}/thoughts`,
