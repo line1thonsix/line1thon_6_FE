@@ -4,18 +4,18 @@ import type { Finding, FindingCategory } from '../../types/comparison'
 import { emptyFindingMessage, findingPresentation } from '../../data/comparison'
 
 const emptyFindingSurface: Record<FindingCategory, string> = {
-  COMMON: 'rounded-lg bg-me-surface px-3 py-2',
-  CONFLICT: 'rounded-lg bg-me-surface px-3 py-2',
-  COMPLEMENT: 'flex min-h-[46px] items-center rounded-[10px] bg-ai-surface px-3.5 py-3',
-  UNIQUE: 'flex min-h-[46px] items-center rounded-[10px] bg-me-surface px-3.5 py-3',
-  UNDETERMINED: 'rounded-lg bg-hold-surface px-3 py-2',
+  COMMON: 'rounded-lg bg-me-surface',
+  CONFLICT: 'rounded-lg bg-me-surface',
+  COMPLEMENT: 'rounded-[10px] bg-ai-surface',
+  UNIQUE: 'rounded-[10px] bg-me-surface',
+  UNDETERMINED: 'rounded-lg bg-hold-surface',
 }
 
 export function EmptyFindingCard({ category }: { category: FindingCategory }) {
   const presentation = findingPresentation[category]
   return <article className={`finding-card ${presentation.style}`} aria-label={presentation.label}>
     <div className="flex items-center gap-2"><span className="finding-badge">{presentation.label}</span></div>
-    <div className={`mt-2 ${emptyFindingSurface[category]}`}>
+    <div className={`mt-2 flex min-h-[48px] items-center px-3.5 py-3 ${emptyFindingSurface[category]}`}>
       <p className="text-caption font-medium leading-4 text-muted">{emptyFindingMessage[category]}</p>
     </div>
   </article>
