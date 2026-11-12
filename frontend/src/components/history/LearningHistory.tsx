@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../ui/Button'
+import { clearQuestionTitleTooltip, showQuestionTitleTooltip } from '../ui/questionTitleTooltip'
 import { GuestMenu } from '../layout/GuestMenu'
 import { filterHistory, groupHistory, historyFilters, historyLabel, historyTime } from '../../data/history'
 import type { HistoryFilter, HistoryItem } from '../../types/history'
@@ -18,7 +19,7 @@ export function LearningHistory({ onDelete, items, status, error, onRetry, onOpe
         {group.entries.map(item => <div key={item.id} className="group relative"><Button variant="plain" onClick={() => onOpen(item.id)} aria-label={`${item.question} 대화 열기`} className="group relative w-full justify-start rounded-learning-card border border-line bg-page px-4 py-3.5 text-left transition-colors hover:border-history-hover-line hover:bg-brand-subtle focus-visible:border-history-hover-line focus-visible:bg-brand-subtle">
           <span className="flex min-w-0 flex-1 flex-col gap-1 pr-6">
             <span className="flex items-center gap-2"><span title={item.learningPath === 'BASIC' ? '도움받아 학습' : item.learningPath === 'SELF' ? '직접 생각 작성' : undefined} className={`rounded-full border px-2 py-0.5 text-caption font-medium leading-4 ${item.learningPath === 'BASIC' ? 'border-basic-line text-basic-fg' : 'border-hold-line text-hold-fg'}`}>{historyLabel(item)}</span><time dateTime={item.updatedAt ? new Date(item.updatedAt).toISOString() : undefined} className="text-caption text-muted">{historyTime(item.updatedAt)}</time></span>
-            <span className="text-body-lg leading-6 font-medium break-words">{item.question}</span>
+            <span className="line-clamp-2 wrap-anywhere text-body-lg leading-6 font-medium" onMouseEnter={showQuestionTitleTooltip} onMouseLeave={clearQuestionTitleTooltip}>{item.question}</span>
             {item.reflection && <span className="text-caption text-secondary break-words">{item.reflection}</span>}
           </span>
         </Button><GuestMenu conversation onDelete={onDelete ? () => onDelete(item.id) : undefined} /></div>)}
