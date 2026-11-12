@@ -6,6 +6,7 @@ import { validateBackendThought, validateBackendCreateChat, readBackendCreatedCh
 import { createBackendClient, guestTokenStore, BackendApiError } from '../src/api/backend/client.ts'
 import { createBackendChat } from '../src/api/backend/chats.ts'
 import { validateThought } from '../src/api/thoughtValidation.ts'
+import { editThoughtDraft, manualThought, readThoughtDraft, toggleChoice } from '../src/api/thoughtDraft.ts'
 import { redactionOccurred } from '../src/security/redactionNotice.ts'
 
 const lock = (change = {}) => ({ prepareStatus: 'DONE', status: 'LOCKED', hintLevel: 0, analysis: null, ...change })
@@ -49,16 +50,33 @@ test('result decoder cannot run under LOCKED even if a caller claims analysis co
   for (const raw of [{ referenceAnswer: null }, { nested: [{ findings: [] }] }, { analysis: { comparisonResult: {} } }, { score: 10 }]) assert.throws(() => assertNoResultContent(raw))
   assert.doesNotThrow(() => assertNoResultContent({ status: 'LOCKED', hintLevel: 2, analysis: { mode: 'BASIC', analysisStatus: 'PENDING' } }))
 })
-test('confirmed server validation counts entire trimmed thought and UTF-16 while existing manual-only Mock rule stays intact', () => {
-  const valid = '서로 다른 조건을 나누고 작은 예시의 실제 값을 출력해서 확인하겠습니다.'
-  assert.equal(validateBackendThought(valid), true)
-  assert.equal(validateBackendThought(' ' + valid + '\n'), true)
-  assert.equal(validateBackendThought('a'.repeat(30)), false)
-  assert.equal(validateBackendThought('가나다라마바사아' + '가'.repeat(22)), true)
-  assert.equal(validateBackendThought('가나다라마바사아' + '가'.repeat(1992)), true)
-  assert.equal(validateBackendThought('가나다라마바사아' + '가'.repeat(1993)), false)
-  assert.ok(validateThought(valid, '짧은 직접 입력')) // intentional current UI/Mock policy
-  assert.equal(validateBackendThought('😀'.repeat(15)), false)
+test('Railway and Mock count only manually owned characters for minimum length and diversity', () => {
+  const chat = { choices: ['배열 인덱스 범위를 초과한 접근부터 먼저 차례대로 확인하기', '다른 선택지'.repeat(15), '마지막'], exampleSentence: '' }
+  const selected = toggleChoice(readThoughtDraft('', chat), chat, 0)
+  const valid = 'abcdefg h' + 'a'.repeat(21)
+  assert.equal(valid.length, 30)
+  for (const [manual, expected] of [
+    ['', false], ['네', false], ['abcdefgh' + 'a'.repeat(21), false],
+    ['abcdefg' + 'a'.repeat(23), false], ['abcdefg \n\t' + 'a'.repeat(22), false], [valid, true],
+    ['  ' + valid.replace(' ', '') + '\n', false], ['  ' + valid + '\n', true],
+  ]) {
+    const draft = editThoughtDraft(selected, selected.text + manual)
+    const restored = readThoughtDraft(JSON.parse(JSON.stringify(draft)), chat)
+    assert.deepEqual(restored, draft)
+    const replaced = toggleChoice(restored, chat, 1)
+    const removed = toggleChoice(replaced, chat, 1)
+    for (const candidate of [draft, restored, replaced, removed]) {
+      assert.equal(manualThought(candidate), manual)
+      assert.equal(validateBackendThought(candidate.text, manualThought(candidate)), expected)
+      assert.equal(validateThought(candidate.text, manualThought(candidate)) === null, expected)
+    }
+  }
+  const boundary = valid + 'a'.repeat(2000 - selected.text.length - valid.length)
+  assert.equal(validateBackendThought(selected.text + boundary + ' \n', boundary), true)
+  assert.equal(validateBackendThought(selected.text + boundary + 'a', boundary + 'a'), false)
+})
+
+test('backend question validation keeps its existing input limits', () => {
   validateBackendCreateChat({ ...input(), question: '  ' + '가'.repeat(2000) + ' ', code: ' ' + 'x'.repeat(6000) + '\n' })
   for (const change of [{ type: 'FREE' }, { code: 'x'.repeat(6001) }, { question: ' ' }, { question: '가'.repeat(2001) }, { clientRequestId: 'mock-id' }, { exampleId: 'unknown' }]) assert.throws(() => validateBackendCreateChat({ ...input(), ...change }))
 })

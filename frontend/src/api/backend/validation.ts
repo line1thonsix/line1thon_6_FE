@@ -1,13 +1,11 @@
-import { thoughtMetrics } from '../thoughtValidation.ts'
+import { validateThought } from '../thoughtValidation.ts'
 import { backendQuestionTypes, exampleIds } from './contracts.ts'
 import type { BackendCreateChatRequest, BackendCreatedChat } from './contracts.ts'
 import { assertNoResultContent } from './lockState.ts'
 
-// Server rules count the entire trimmed thought, including suggestions. Mock/UI
-// manual-only validation stays unchanged until the product/UI migration is agreed.
-export function validateBackendThought(text: string): boolean {
-  const { length, distinct } = thoughtMetrics(text)
-  return length >= 30 && length <= 2000 && distinct >= 8
+// Frontend submission rules. The Railway request still carries the full text.
+export function validateBackendThought(text: string, manual: string): boolean {
+  return validateThought(text, manual) === null
 }
 export function validateBackendCreateChat(v: BackendCreateChatRequest): void {
   if (!v || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(v.clientRequestId) || !backendQuestionTypes.includes(v.type) ||

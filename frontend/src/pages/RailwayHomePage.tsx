@@ -9,7 +9,7 @@ import { canRetryAnalysis, canStartBasic } from '../api/backend/analysis'
 import { ComparisonContent } from '../components/chat/ComparisonResult'
 import { LearningContent } from '../components/chat/BasicLearningResult'
 import type { BackendChatDetail } from '../api/backend/workspaceApi'
-import { editThoughtDraft, readThoughtDraft, toggleChoice } from '../api/thoughtDraft'
+import { editThoughtDraft, manualThought, readThoughtDraft, toggleChoice } from '../api/thoughtDraft'
 import type { ThoughtDraft } from '../api/thoughtDraft'
 import { LockedAnswer } from '../components/chat/LockedAnswer'
 import { QuestionBubble } from '../components/chat/QuestionBubble'
@@ -108,7 +108,7 @@ function ReadyChat({ chat, flow }: { chat: BackendChatDetail; flow: Workspace })
       <p className="mt-2 whitespace-pre-wrap break-words">{draft.text}</p>
     </details>}
     {chat.status === 'LOCKED' && <QuestionComposer draft={chat} mode="locked" validation="" onChange={() => {}} onSubmit={() => {}}
-      thought={draft.text} getThoughtDraft={() => latest.current} onThoughtRestore={update}
+      thought={draft.text} thoughtManual={manualThought(draft)} getThoughtDraft={() => latest.current} onThoughtRestore={update}
       onThoughtChange={(value, edit) => update(editThoughtDraft(latest.current, value, edit))}
       thoughtBlocked={blocked} thoughtPhase={showAnalysis ? 'pending' : flow.busy === 'thought' ? 'submitting' : 'writing'}
       thoughtActionLabel={job?.status === 'FAILED' ? '분석 실패' : '분석 대기 중'}

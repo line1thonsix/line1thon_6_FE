@@ -10,10 +10,11 @@ import type { BackendAnalysisJob, BackendAnalysisProgress, BackendAnalysisResult
 import { backendWorkspaceApi } from '../api/backend/workspaceApi'
 import type { BackendChatDetail } from '../api/backend/workspaceApi'
 import { validateQuestion } from '../api/chatValidation'
+import { manualThought } from '../api/thoughtDraft'
 import type { ThoughtDraft } from '../api/thoughtDraft'
 import { defaultQuestionType } from '../data/questionTypes'
 import { notifyRedaction } from '../security/redactionNotice'
-import { redactValue } from '../security/redaction'
+import { redactSecrets, redactValue } from '../security/redaction'
 import { readSession, workspaceKey, writeSession } from '../storage/session'
 import { questionTypes } from '../types/chat'
 import type { QuestionDraft } from '../types/chat'
@@ -283,8 +284,10 @@ export function useRailwayWorkspace(client: BackendClient) {
   }
   function submitThought(thought: ThoughtDraft) {
     if (active.current || !detail || detail.status !== 'LOCKED' || detail.analysis || detail.thought || detached || needsSync) return
+    const manual = manualThought(thought)
     const safe = safeInput(thought)
-    if (!validateBackendThought(safe.text)) {
+    if (!validateBackendThought(thought.text, manual) ||
+        !validateBackendThought(safe.text, redactSecrets(manual).value)) {
       setError('생각을 30~2,000자로 적어 주세요. 공백을 빼고 서로 다른 문자가 8개 이상 필요해요.')
       return
     }
