@@ -59,6 +59,18 @@ test('protected payloads, wrong jobs, and DONE with a still locked chat never ex
   }), /not been released/)
 })
 
+test('Railway releases explicit empty findings only for a valid, unlocked DONE comparison', () => {
+  const empty = { ...compareDone, findings: [] }
+  assert.deepEqual(readAnalysisResult(empty, unlocked()).findings, [])
+  for (const findings of [null, {}, [compareDone.findings[1]]]) {
+    assert.throws(() => readAnalysisResult({ ...empty, findings }, unlocked()), /Invalid analysis findings/)
+  }
+  assert.throws(() => readAnalysisResult(empty, detail()), /not been released/)
+  for (const analysisStatus of ['PENDING', 'FAILED']) {
+    assert.throws(() => readAnalysisResult({ ...empty, analysisStatus }, unlocked()), /Protected/)
+  }
+})
+
 test('a restored failed job keeps its error code and retry budget, including exhaustion', async () => {
   const restored = detail({ analysis: { ...job, status: 'FAILED', retryCount: 2, remainingRetries: 0 } })
   let seen

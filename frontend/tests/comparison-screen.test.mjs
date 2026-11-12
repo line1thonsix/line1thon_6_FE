@@ -62,11 +62,56 @@ test('writing/pending composer retains existing validation and waiting behavior 
   assert.match(writing, /<button\b[^>]*aria-label="내 생각 제출"[^>]*disabled/u)
 })
 
-test('stored-example tag and sparse result cards survive removing the filter UI', () => {
+test('stored-example tag and one sparse result render alongside four empty categories', () => {
   const result = readComparisonResult(buildComparisonFixture(chat, thought, 'job', 'result', 'sparse'), thought)
   const html = renderToStaticMarkup(createElement(ComparisonContent, { result: { ...result, responseSource: 'SAVED_EXAMPLE' } }))
   assert.ok(html.includes('저장 예시'))
   assert.equal(html.includes('직접 생각 작성'), false)
-  assert.equal((html.match(/<article\b/gu) ?? []).length, result.findings.length)
+  assert.equal((html.match(/<article\b/gu) ?? []).length, 5)
   assert.equal(html.includes('비교 항목 필터'), false)
+})
+
+const cards = result => [...renderToStaticMarkup(createElement(ComparisonContent, { result })).matchAll(/<article\b[^>]*aria-label="([^"]+)"[^>]*>([\s\S]*?)<\/article>/gu)]
+
+test('comparison fixes category order, keeps per-category wire order and leaves findings intact', () => {
+  const result = readComparisonResult(buildComparisonFixture(chat, thought, 'job', 'result', 'all-categories'), thought)
+  const common = result.findings.find(f => f.category === 'COMMON')
+  const conflict = result.findings.find(f => f.category === 'CONFLICT')
+  const complement = result.findings.find(f => f.category === 'COMPLEMENT')
+  const second = { ...conflict, id: 'second-conflict', title: '두 번째 오류' }
+  const findings = Object.freeze([complement, conflict, common, second])
+  const rendered = cards({ ...result, findings })
+  assert.deepEqual(rendered.map(([, label]) => label), [
+    `공통: ${common.title}`, `오류: ${conflict.title}`, '오류: 두 번째 오류', `보완: ${complement.title}`, '고유', '판단 보류',
+  ])
+  const evidenceIds = rendered.slice(0, 4).map(([, , body]) => {
+    assert.match(body, /<h3 class="text-body font-medium">/u)
+    assert.match(body, /근거와 확인 방법 보기/u)
+    return body.match(/aria-controls="([^"]+)"/u)?.[1]
+  })
+  assert.ok(evidenceIds.every(Boolean))
+  assert.equal(new Set(evidenceIds).size, 4)
+  assert.deepEqual(findings, [complement, conflict, common, second])
+  assert.deepEqual(cards({ ...result, findings: [complement, common] }).map(([, label]) => label),
+    [`공통: ${common.title}`, '오류', `보완: ${complement.title}`, '고유', '판단 보류'])
+})
+
+test('a completed empty result renders five badge-only headers and exact copy in existing body styles', () => {
+  const result = readComparisonResult(buildComparisonFixture(chat, thought, 'job', 'result', 'empty'), thought)
+  const rendered = cards(result)
+  const expected = [
+    ['공통', '이번 분석에서 공통으로 분류된 내용이 없어요.', 'bg-me-surface'],
+    ['오류', '이번 분석에서 별도로 지적된 오류는 없어요.', 'bg-me-surface'],
+    ['보완', '이번 분석에서 별도로 제안된 보완점은 없어요.', 'bg-ai-surface'],
+    ['고유', '이번 분석에서 고유한 관점으로 분류된 내용은 없어요.', 'bg-me-surface'],
+    ['판단 보류', '이번 분석에서 판단을 보류한 항목은 없어요.', 'bg-hold-surface'],
+  ]
+  assert.deepEqual(rendered.map(([, label]) => label), expected.map(([label]) => label))
+  for (const [index, [, label, body]] of rendered.entries()) {
+    const [, message, surface] = expected[index]
+    assert.ok(body.includes(`<span class="finding-badge">${label}</span></div>`))
+    assert.ok(body.includes(surface))
+    assert.ok(body.includes(`<p class="text-caption font-medium leading-4 text-muted">${message}</p>`))
+    assert.doesNotMatch(body, /<h[1-6]\b|<button\b|내 생각/u)
+  }
 })

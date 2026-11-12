@@ -1,9 +1,9 @@
 import { PostResultNotes } from './PostResultNotes'
 import { Button } from '../ui/Button'
-import { FindingCard } from './FindingCard'
+import { EmptyFindingCard, FindingCard } from './FindingCard'
 import type { ComparisonResult as Result } from '../../types/comparison'
 import type { AnalysisCompletion } from '../../types/analysis'
-import { comparisonDisclaimer } from '../../data/comparison'
+import { comparisonDisclaimer, findingDisplayOrder } from '../../data/comparison'
 import { useComparisonResult } from '../../hooks/useComparisonResult'
 import { ResultConversation } from './ResultConversation'
 import { QuestionBubble } from './QuestionBubble'
@@ -21,7 +21,14 @@ export function ComparisonContent({ result, notes = true, notice = comparisonDis
       <section className="rounded-panel bg-ai-surface p-4" aria-label="AI의 참고 관점"><h2 className="text-body font-medium">AI의 참고 관점</h2><p className="mt-2 whitespace-pre-wrap text-body break-words">{result.referenceAnswer}</p></section>
     </div>
     <p className="sr-only" role="status">비교 항목 {result.findings.length}개</p>
-    <div className="flex flex-col gap-2.5" aria-label="비교 항목 목록">{result.findings.map(finding => <FindingCard key={finding.id} finding={finding} />)}</div>
+    <div className="flex flex-col gap-2.5" aria-label="비교 항목 목록">
+      {findingDisplayOrder.map(category => {
+        const findings = result.findings.filter(finding => finding.category === category)
+        return findings.length
+          ? findings.map(finding => <FindingCard key={finding.id} finding={finding} />)
+          : <EmptyFindingCard key={category} category={category} />
+      })}
+    </div>
     <p className="text-caption text-muted">{notice}</p>
     {notes && result.chatId && <PostResultNotes key={result.chatId} chatId={result.chatId} />}
   </section>

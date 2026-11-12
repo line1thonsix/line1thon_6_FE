@@ -42,8 +42,10 @@ test('non-source quotes are removed, including optional quotes; exact original s
   for (const finding of result.findings) if (finding.userQuote) assert.equal(thought.includes(finding.userQuote), true)
 })
 
-test('empty/entirely invalid results fail atomically, malformed top-level status or thought is rejected', () => {
-  for (const scenario of ['empty', 'all-invalid']) assert.throws(() => readComparisonResult(rawFixture(scenario), thought), error => error instanceof ComparisonValidationError && error.kind === 'empty')
+test('only a valid DONE result can supply an explicitly empty findings array', () => {
+  assert.deepEqual(readComparisonResult(rawFixture('empty'), thought).findings, [])
+  assert.throws(() => readComparisonResult(rawFixture('all-invalid'), thought), error => error instanceof ComparisonValidationError && error.kind === 'empty')
+  assert.throws(() => readComparisonResult({ ...rawFixture(), findings: null }, thought))
   assert.throws(() => readComparisonResult({ ...rawFixture(), status: 'PENDING' }, thought))
   assert.throws(() => readComparisonResult(rawFixture(), thought + '다른 원문'))
   const broken = rawFixture('sparse')
@@ -63,7 +65,7 @@ test('sparse categories are valid and yield zero counts; scores and unapproved f
   assert.equal('score' in result.findings[0], false)
 })
 
-test('empty result validation gets at most one internal re-call and cannot become DONE', () => {
+test('invalid result validation gets at most one internal re-call and cannot become DONE', () => {
   let now = 0
   let validations = 0
   const store = createAnalysisStore({ now: () => now, durationMs: 100, validateResult: () => { validations++; return false } })
@@ -158,38 +160,38 @@ test('P0 retry integration: FAILED never reveals results; retry completes with t
   } finally { server.close() }
 })
 
-test('empty or all-invalid quotes fail analysis, preserve thought, and keep results locked through 3 attempts', async () => {
-  for (const scenario of ['empty', 'all-invalid']) {
-    let now = 0
-    const server = setupServer(...createChatHandlers({ origin, now: () => now, delayMs: 1, analysisDurationMs: 100, comparisonScenario: () => scenario }))
-    server.listen({ onUnhandledFrame: 'error' })
-    try {
-      const { path } = await createChat(); await submitThought(path)
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        now += 200
-        const failed = await (await fetch(origin + path + '/analysis')).json()
-        assert.equal(failed.status, 'FAILED'); assert.equal(failed.reason, 'INVALID_OUTPUT'); assert.equal(failed.attempt, attempt)
-        assertLockedBody(failed)
-        const forbidden = await fetch(origin + path + '/result?status=DONE&resultId=guessed')
-        assert.equal(forbidden.status, 403); assertLockedBody(await forbidden.json())
-        const detail = await (await fetch(origin + path)).json()
-        assert.equal(detail.thought, thought); assertLockedBody(detail)
-        const retry = await post(path + '/analysis/retry', { jobId: failed.jobId, clientRequestId: 'retry-' + attempt })
-        assert.equal(retry.status, attempt < 3 ? 202 : 409)
-      }
-    } finally { server.close() }
-  }
+test('all-invalid quotes fail analysis, preserve thought, and keep results locked through 3 attempts', async () => {
+  let now = 0
+  const server = setupServer(...createChatHandlers({ origin, now: () => now, delayMs: 1, analysisDurationMs: 100, comparisonScenario: () => 'all-invalid' }))
+  server.listen({ onUnhandledFrame: 'error' })
+  try {
+    const { path } = await createChat(); await submitThought(path)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      now += 200
+      const failed = await (await fetch(origin + path + '/analysis')).json()
+      assert.equal(failed.status, 'FAILED'); assert.equal(failed.reason, 'INVALID_OUTPUT'); assert.equal(failed.attempt, attempt)
+      assertLockedBody(failed)
+      const forbidden = await fetch(origin + path + '/result?status=DONE&resultId=guessed')
+      assert.equal(forbidden.status, 403); assertLockedBody(await forbidden.json())
+      const detail = await (await fetch(origin + path)).json()
+      assert.equal(detail.thought, thought); assertLockedBody(detail)
+      const retry = await post(path + '/analysis/retry', { jobId: failed.jobId, clientRequestId: 'retry-' + attempt })
+      assert.equal(retry.status, attempt < 3 ? 202 : 409)
+    }
+  } finally { server.close() }
 })
 
-test('MSW filters hallucinated quotes before sending a nonempty result; sparse response disables empty categories', async () => {
-  for (const scenario of ['invalid-quote', 'sparse']) {
+test('MSW releases valid empty and sparse results and filters hallucinated quotes', async () => {
+  for (const scenario of ['empty', 'invalid-quote', 'sparse']) {
     let now = 0
     const server = setupServer(...createChatHandlers({ origin, now: () => now, delayMs: 1, analysisDurationMs: 100, comparisonScenario: () => scenario }))
     server.listen({ onUnhandledFrame: 'error' })
     try {
       const { path } = await createChat(); await submitThought(path); now = 100
       const done = await (await fetch(origin + path + '/analysis')).json()
+      assert.equal(done.status, 'DONE')
       const result = await (await fetch(origin + path + '/result?resultId=' + done.resultId)).json()
+      if (scenario === 'empty') assert.deepEqual(readComparisonResult(result, thought).findings, [])
       assert.equal(result.findings.some(f => f.id === 'invalid-quote'), false)
       for (const finding of result.findings) if (finding.userQuote) assert.equal(thought.includes(finding.userQuote), true)
       if (scenario === 'sparse') assert.equal(findingCounts(result.findings).UNIQUE, 0)

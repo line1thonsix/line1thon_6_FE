@@ -80,6 +80,7 @@ function readFindings(raw: unknown, thought: string): Finding[] {
     ids.add(f.id)
     findings.push(finding)
   }
+  if (raw.length && !findings.length) throw new Error('Invalid analysis findings')
   return findings
 }
 

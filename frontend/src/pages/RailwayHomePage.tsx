@@ -87,10 +87,7 @@ function ReadyChat({ chat, flow }: { chat: BackendChatDetail; flow: Workspace })
               <Button className="mt-2 gap-1.5 text-body text-danger" disabled={!!flow.busy || flow.needsSync || !canRetryAnalysis(flow.analysis)} onClick={flow.retryAnalysis}>다시 연결해 볼게요 ({job.remainingRetries}회 남음)<Icon name="retry" /></Button>}
           </div>}
           {job?.status === 'DONE' && !flow.result && !flow.error && <p role="status" className="text-body text-muted">분석 결과를 확인하고 있어요…</p>}
-          {flow.result?.mode === 'COMPARE' && <>
-            <ComparisonContent result={flow.result} notes={false} notice={flow.result.notice} />
-            {!flow.result.findings.length && <p role="status" className="text-body text-secondary">표시할 비교 항목이 없어요.</p>}
-          </>}
+          {flow.result?.mode === 'COMPARE' && <ComparisonContent result={flow.result} notes={false} notice={flow.result.notice} />}
           {flow.result?.mode === 'BASIC' && <>
             {flow.result.responseSource === 'SAVED_EXAMPLE' && <span className="self-start rounded-control bg-brand-subtle px-2 py-1 text-caption text-brand-deep">저장 예시</span>}
             <LearningContent result={flow.result} notice={flow.result.notice} />

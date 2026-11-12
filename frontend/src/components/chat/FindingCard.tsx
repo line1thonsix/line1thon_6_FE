@@ -1,7 +1,25 @@
 import { useId, useState } from 'react'
 import { Icon } from '../ui/Icon'
-import type { Finding } from '../../types/comparison'
-import { findingPresentation } from '../../data/comparison'
+import type { Finding, FindingCategory } from '../../types/comparison'
+import { emptyFindingMessage, findingPresentation } from '../../data/comparison'
+
+const emptyFindingSurface: Record<FindingCategory, string> = {
+  COMMON: 'rounded-lg bg-me-surface px-3 py-2',
+  CONFLICT: 'rounded-lg bg-me-surface px-3 py-2',
+  COMPLEMENT: 'flex min-h-[46px] items-center rounded-[10px] bg-ai-surface px-3.5 py-3',
+  UNIQUE: 'flex min-h-[46px] items-center rounded-[10px] bg-me-surface px-3.5 py-3',
+  UNDETERMINED: 'rounded-lg bg-hold-surface px-3 py-2',
+}
+
+export function EmptyFindingCard({ category }: { category: FindingCategory }) {
+  const presentation = findingPresentation[category]
+  return <article className={`finding-card ${presentation.style}`} aria-label={presentation.label}>
+    <div className="flex items-center gap-2"><span className="finding-badge">{presentation.label}</span></div>
+    <div className={`mt-2 ${emptyFindingSurface[category]}`}>
+      <p className="text-caption font-medium leading-4 text-muted">{emptyFindingMessage[category]}</p>
+    </div>
+  </article>
+}
 
 export function FindingCard({ finding }: { finding: Finding }) {
   const [open, setOpen] = useState(false)
