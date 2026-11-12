@@ -75,6 +75,23 @@ test('protected fields, undisclosed hints, unexpected owners and inconsistent re
   assert.throws(() => readThoughtReceipt({ jobId: 2, mode: 'COMPARE', analysisStatus: 'PENDING', status: 'UNLOCKED_SELF' }, 202))
 })
 
+test('Railway detail accepts one to three distinct choices only after preparation is DONE', async () => {
+  for (const count of [1, 2, 3]) {
+    const choices = detail().choices.slice(0, count)
+    const { client } = clientWith(async () => json(detail({ choices })), 'owner')
+    assert.deepEqual((await backendWorkspaceApi(client, 'owner', signal()).detail(1)).choices, choices)
+  }
+  for (const choices of [[], ['a', 'b', 'c', 'd'], null, 'a', [''], [' '], ['a', 1], ['a', null], ['a', 'a'], Array(1)]) {
+    assert.throws(() => readChatDetail(detail({ choices }), 1), /Invalid backend choices/)
+  }
+  for (const prepareStatus of ['PREPARING', 'FAILED']) {
+    assert.deepEqual(readChatDetail(detail({ prepareStatus, choices: null }), 1).choices, [])
+    for (const choices of [[], ['아직 공개되지 않은 선택지']]) {
+      assert.throws(() => readChatDetail(detail({ prepareStatus, choices }), 1), /Invalid backend choices/)
+    }
+  }
+})
+
 test('invalid guest is renewed but old reads and mutations cannot be replayed under the replacement', async () => {
   const calls = []
   const { client, tokens } = clientWith(async (url, init) => {

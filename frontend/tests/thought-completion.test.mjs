@@ -23,6 +23,34 @@ test('three choices toggle off or replace one another without accumulating phras
   assert.deepEqual(toggleChoice(draft, chat, 99), draft)
 })
 
+test('one- and two-choice drafts restore ownership and reject indexes outside the actual list', () => {
+  for (const count of [1, 2]) {
+    const preparation = { ...chat, choices: chat.choices.slice(0, count) }
+    const blank = readThoughtDraft('', preparation)
+    let draft = toggleChoice(blank, preparation, 0)
+    assert.equal(validateThought(draft.text, manualThought(draft)), THOUGHT_GUIDANCE)
+    draft = editThoughtDraft(draft, draft.text + manual)
+    if (count === 2) draft = toggleChoice(draft, preparation, 1)
+    const restored = readThoughtDraft(JSON.parse(JSON.stringify(draft)), preparation)
+    assert.deepEqual(restored, draft)
+    assert.equal(restored.choiceIndex, count - 1)
+    assert.equal(restored.text, choiceSentence(preparation, count - 1) + manual)
+    assert.equal(editThoughtDraft(restored, manual), restored)
+    assert.equal(manualThought(restored), manual)
+    assert.equal(validateThought(restored.text, manualThought(restored)), null)
+    assert.deepEqual(toggleChoice(restored, preparation, count - 1), readThoughtDraft(manual, preparation))
+    for (const index of [count, -1, 0.5]) {
+      assert.equal(toggleChoice(restored, preparation, index), restored)
+      assert.equal(choiceSentence(preparation, index), null)
+    }
+    const removedChoice = editThoughtDraft(toggleChoice(initial(''), chat, count), choiceSentence(chat, count) + manual)
+    const legacy = { version: 2, manual, completion: { kind: 'choice', index: count } }
+    for (const saved of [removedChoice, legacy]) {
+      assert.deepEqual(readThoughtDraft(saved, preparation), readThoughtDraft(manual, preparation))
+    }
+  }
+})
+
 test('matching words typed by the user are never mistaken for the inserted phrase', () => {
   const own = `직접 쓴 문장: ${choiceSentence(chat, 0)}이 문장은 남겨 주세요.`
   let draft = toggleChoice(initial(own), chat, 0)

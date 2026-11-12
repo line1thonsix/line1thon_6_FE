@@ -419,14 +419,13 @@ export function createChatHandlers(options: Options = {}) {
       let manual = safeThought
       if (body.suggestion !== undefined) {
         const v = body.suggestion as { index?: unknown; start?: unknown; end?: unknown } | null
-        if (!v || !Number.isInteger(v.index) || Number(v.index) < 0 || Number(v.index) > 2 ||
-          !Number.isInteger(v.start) || !Number.isInteger(v.end) || Number(v.start) < 0 || Number(v.end) <= Number(v.start) || Number(v.end) > safeThought.length) {
+        if (!v || !Number.isInteger(v.start) || !Number.isInteger(v.end) || Number(v.start) < 0 || Number(v.end) <= Number(v.start) || Number(v.end) > safeThought.length) {
           return HttpResponse.json({ code: 'THOUGHT_INVALID' }, { status: 400 })
         }
         const start = Number(v.start), end = Number(v.end)
-        const expected = choiceSentence(chats.get(chatId)!, Number(v.index))
+        const expected = choiceSentence(chats.get(chatId)!, v.index)
         const actual = safeThought.slice(start, end)
-        if (![expected, expected.trimEnd(), ' ' + expected, ' ' + expected.trimEnd()].includes(actual)) {
+        if (expected === null || ![expected, expected.trimEnd(), ' ' + expected, ' ' + expected.trimEnd()].includes(actual)) {
           return HttpResponse.json({ code: 'THOUGHT_INVALID' }, { status: 400 })
         }
         manual = safeThought.slice(0, start) + safeThought.slice(end)

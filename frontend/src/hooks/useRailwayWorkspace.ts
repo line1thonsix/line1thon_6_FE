@@ -10,7 +10,7 @@ import type { BackendAnalysisJob, BackendAnalysisProgress, BackendAnalysisResult
 import { backendWorkspaceApi } from '../api/backend/workspaceApi'
 import type { BackendChatDetail } from '../api/backend/workspaceApi'
 import { validateQuestion } from '../api/chatValidation'
-import { manualThought } from '../api/thoughtDraft'
+import { isChoiceIndex, manualThought } from '../api/thoughtDraft'
 import type { ThoughtDraft } from '../api/thoughtDraft'
 import { defaultQuestionType } from '../data/questionTypes'
 import { notifyRedaction } from '../security/redactionNotice'
@@ -284,6 +284,10 @@ export function useRailwayWorkspace(client: BackendClient) {
   }
   function submitThought(thought: ThoughtDraft) {
     if (active.current || !detail || detail.status !== 'LOCKED' || detail.analysis || detail.thought || detached || needsSync) return
+    if (thought.choiceIndex !== null && !isChoiceIndex(detail.choices, thought.choiceIndex)) {
+      setError(messages.INVALID_INPUT)
+      return
+    }
     const manual = manualThought(thought)
     const safe = safeInput(thought)
     if (!validateBackendThought(thought.text, manual) ||

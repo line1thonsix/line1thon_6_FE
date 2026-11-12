@@ -48,7 +48,7 @@ export function readChatDetail(raw: unknown, chatId: number): BackendChatDetail 
       (value.thought !== null && !nonempty(value.thought))) throw new Error('Invalid backend chat detail')
   const choices = value.choices
   if (state.prepareStatus === 'DONE'
-    ? !Array.isArray(choices) || choices.length !== 3 || !choices.every(nonempty) || new Set(choices).size !== 3
+    ? !Array.isArray(choices) || choices.length < 1 || choices.length > 3 || ![...choices].every(nonempty) || new Set(choices).size !== choices.length
     : choices !== null) throw new Error('Invalid backend choices')
   if (!Array.isArray(value.hints) || value.hints.length !== state.hintLevel) throw new Error('Invalid backend hints')
   const hints = value.hints.map((rawHint, index): Hint => {

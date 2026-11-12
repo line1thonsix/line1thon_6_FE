@@ -32,7 +32,7 @@ type Workspace = ReturnType<typeof useRailwayWorkspace>
 const exampleIds = ['EXAMPLE_DEBUGGING', 'EXAMPLE_CONCEPT', 'EXAMPLE_PROBLEM_SOLVING'] as const
 
 function ReadyChat({ chat, flow }: { chat: BackendChatDetail; flow: Workspace }) {
-  const preparation = { choices: chat.choices as [string, string, string], exampleSentence: '' }
+  const preparation = { choices: chat.choices, exampleSentence: '' }
   const [initial] = useState(() => readThoughtDraft(flow.saved.thought, preparation))
   const latest = useRef(initial)
   const [draft, setDraft] = useState(initial)

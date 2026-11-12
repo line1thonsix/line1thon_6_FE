@@ -1,13 +1,14 @@
-import type { LockedChat } from '../types/chat.ts'
 import { appendThought } from './thoughtValidation.ts'
 
 // Only choice-owned characters are immutable. User text remains editable in the same textarea.
 export type ThoughtDraft = { version: 3; text: string; choiceIndex: number | null; owned: boolean[] }
 export type ThoughtEdit = { before: string; start: number; end: number }
-type Preparation = Pick<LockedChat, 'choices' | 'exampleSentence'>
-const validIndex = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) < 3
+type Preparation = { choices: readonly string[]; exampleSentence: string }
+export const isChoiceIndex = (choices: readonly string[], value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < choices.length
 const plainDraft = (text: string): ThoughtDraft => ({ version: 3, text, choiceIndex: null, owned: Array<boolean>(text.length).fill(false) })
-export const choiceSentence = (chat: Preparation, index: number) => `${chat.choices[index]}부터 볼게요. 이유는 `
+export const choiceSentence = (chat: Preparation, index: unknown) =>
+  isChoiceIndex(chat.choices, index) ? `${chat.choices[index]}부터 볼게요. 이유는 ` : null
 
 export function editThoughtDraft(draft: ThoughtDraft, text: string, edit?: ThoughtEdit): ThoughtDraft {
   // Input events replace a contiguous range. Inserted/edited characters belong to the user;
@@ -32,14 +33,15 @@ export function editThoughtDraft(draft: ThoughtDraft, text: string, edit?: Thoug
 }
 
 export function toggleChoice(draft: ThoughtDraft, chat: Preparation, index: number): ThoughtDraft {
-  if (!validIndex(index)) return draft
+  const sentence = choiceSentence(chat, index)
+  if (sentence === null) return draft
   const position = draft.owned.indexOf(true)
-  const plain = draft.text.split('').filter((_, i) => !draft.owned[i]).join('')
+  const plain = manualThought(draft)
   if (draft.choiceIndex === index) return plainDraft(plain)
   const at = position < 0 ? plain.length : position
   const before = plain.slice(0, at)
   const after = plain.slice(at)
-  const inserted = `${before && !/\s$/u.test(before) ? ' ' : ''}${choiceSentence(chat, index)}`
+  const inserted = `${before && !/\s$/u.test(before) ? ' ' : ''}${sentence}`
   return { version: 3, text: before + inserted + after, choiceIndex: index,
     owned: [...Array<boolean>(before.length).fill(false), ...Array<boolean>(inserted.length).fill(true), ...Array<boolean>(after.length).fill(false)] }
 }
@@ -49,13 +51,15 @@ export function readThoughtDraft(value: unknown, chat: Preparation): ThoughtDraf
   if (value && typeof value === 'object') {
     const v = value as Record<string, unknown>
     if (v.version === 3 && typeof v.text === 'string') {
-      if (validIndex(v.choiceIndex) && Array.isArray(v.owned) && v.owned.length === v.text.length && v.owned.every(flag => typeof flag === 'boolean') && v.owned.some(Boolean)) {
-        const draft: ThoughtDraft = { version: 3, text: v.text, choiceIndex: v.choiceIndex, owned: v.owned as boolean[] }
+      if (Array.isArray(v.owned) && v.owned.length === v.text.length && v.owned.every(flag => typeof flag === 'boolean') && v.owned.some(Boolean)) {
+        const index = isChoiceIndex(chat.choices, v.choiceIndex) ? v.choiceIndex : null
+        const draft: ThoughtDraft = { version: 3, text: v.text, choiceIndex: index, owned: v.owned as boolean[] }
+        if (index === null) return plainDraft(manualThought(draft))
         const automatic = draft.text.split('').filter((_, i) => draft.owned[i]).join('')
         // Older editable drafts may contain fragments. Keep all user-owned text and
         // reinsert the canonical choice rather than freezing a corrupted sentence.
-        if (automatic.trim() !== choiceSentence(chat, draft.choiceIndex!).trim() || !draft.owned.slice(draft.owned.indexOf(true), draft.owned.lastIndexOf(true) + 1).every(Boolean)) {
-          return toggleChoice(toggleChoice(draft, chat, draft.choiceIndex!), chat, draft.choiceIndex!)
+        if (automatic.trim() !== choiceSentence(chat, index)?.trim() || !draft.owned.slice(draft.owned.indexOf(true), draft.owned.lastIndexOf(true) + 1).every(Boolean)) {
+          return toggleChoice(toggleChoice(draft, chat, index), chat, index)
         }
         return draft
       }
@@ -64,8 +68,9 @@ export function readThoughtDraft(value: unknown, chat: Preparation): ThoughtDraf
     // Recover drafts saved by the recent split editor without losing their text.
     if (v.version === 2 && typeof v.manual === 'string') {
       const completion = v.completion as { kind?: unknown; index?: unknown } | null
-      if (completion?.kind === 'choice' && validIndex(completion.index)) {
+      if (completion?.kind === 'choice' && isChoiceIndex(chat.choices, completion.index)) {
         const prefix = choiceSentence(chat, completion.index)
+        if (prefix === null) return plainDraft(v.manual)
         const text = appendThought(prefix, v.manual)
         return { version: 3, text, choiceIndex: completion.index,
           owned: [...Array<boolean>(prefix.length).fill(true), ...Array<boolean>(text.length - prefix.length).fill(false)] }
