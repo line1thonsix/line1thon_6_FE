@@ -51,9 +51,9 @@ export function useHints(chatId: string, canTransition: () => boolean) {
     queueMicrotask(() => { if (!lifecycle.signal.aborted) void run() })
     return () => { lifecycle.abort(); const controller = active.current; active.current = null; controller?.abort(); const basic = basicActive.current; basicActive.current = null; basic?.abort() }
   }, [run])
-  async function transition() {
-    if (active.current || basicActive.current || !canTransition() || state?.basicLearning) return
-    if (!uncertain && (state?.level !== 2 || !state.stuckPoint || !state.stillDifficult)) return
+  async function transition(confirmedState = state) {
+    if (active.current || basicActive.current || !canTransition() || confirmedState?.basicLearning) return
+    if (confirmedState?.level !== 2) return
     const controller = new AbortController()
     basicActive.current = controller
     if (!requestId.current) requestId.current = crypto.randomUUID()
@@ -83,9 +83,8 @@ export function useHints(chatId: string, canTransition: () => boolean) {
   return { currentHint: displayedHint(state, viewed), viewFirst: () => view(1), tab, state, busy: busy || transitioning, error, select, transitioning, uncertain, transitionError,
     transitionBlocked: uncertain || transitioning,
     canWrite: () => !requestId.current && !basicActive.current && !state?.basicLearning,
-    transition,
-    recheckTransition: async () => { const next = await run(); if (next && !next.basicLearning) await transition() },
-    confirmDifficulty: (stillDifficult: boolean) => { if (!requestId.current && state?.level === 2) void run({ stillDifficult }) },
+    transition: () => transition(),
+    recheckTransition: async () => { const next = await run(); if (next && !next.basicLearning) await transition(next) },
     openFirst: () => { if (!requestId.current && state?.level === 0) void run({ level: 1 }) },
     openSecond: () => { if (state?.level === 2) view(2); else if (!requestId.current && state?.level === 1) void run({ level: 2 }) },
     choose: (stuckPoint: StuckPoint) => { if (!requestId.current && state && state.level > 0) void run({ stuckPoint }) },

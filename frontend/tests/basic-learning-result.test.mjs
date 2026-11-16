@@ -31,7 +31,7 @@ async function create(value = draft) {
   return '/api/chats/' + r.body.id
 }
 async function eligible(path) {
-  for (const input of [{ level: 1 }, { level: 2 }, { stuckPoint: 'FLOW' }, { stillDifficult: true }]) assert.equal((await request(path + '/hints', input)).status, 200)
+  for (const input of [{ level: 1 }, { level: 2 }]) assert.equal((await request(path + '/hints', input)).status, 200)
 }
 async function transition(path) {
   const r = await request(path + '/basic-learning', { clientRequestId: crypto.randomUUID() })
@@ -59,7 +59,7 @@ test('F-12 rejects direct/forged access at every pre-transition stage, wrong tra
     const path = await create()
     const forged = path + '/basic-learning/result?transitionId=guessed&learningPath=BASIC&status=DONE&level=2&stillDifficult=true'
     assert.equal((await request(forged)).status, 403)
-    for (const input of [{ level: 1 }, { level: 2 }, { stuckPoint: 'FLOW' }, { stillDifficult: true }]) {
+    for (const input of [{ level: 1 }, { level: 2 }]) {
       await request(path + '/hints', input)
       const denied = await request(forged)
       assert.equal(denied.status, 403); privateMetadata(denied.body)
